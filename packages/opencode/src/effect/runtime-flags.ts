@@ -64,6 +64,7 @@ export class Service extends ConfigService.Service<Service>()("@opencode/Runtime
   experimentalWorkspaces: enabledByExperimental("KILO_EXPERIMENTAL_WORKSPACES"),
   experimentalIconDiscovery: enabledByExperimental("KILO_EXPERIMENTAL_ICON_DISCOVERY"),
   experimentalMcpApps: enabledByExperimental("KILO_EXPERIMENTAL_MCP_APPS"), // kilocode_change
+  disableWorkflows: bool("KILO_DISABLE_WORKFLOWS"), // kilocode_change - dynamic workflows kill switch
   outputTokenMax: positiveInteger("KILO_EXPERIMENTAL_OUTPUT_TOKEN_MAX"),
   bashDefaultTimeoutMs: positiveInteger("KILO_EXPERIMENTAL_BASH_DEFAULT_TIMEOUT_MS"),
   experimentalNativeLlm: bool("KILO_EXPERIMENTAL_NATIVE_LLM"),
