@@ -101,6 +101,7 @@ export type Event =
   | EventSessionWakeup1
   | EventSessionHostAvailability1
   | EventSessionHostContinuation1
+  | EventWorkflowRunUpdated1
   | EventServerInstanceDisposed
   | EventSessionTurnOpen
   | EventSessionTurnClose
@@ -223,6 +224,7 @@ export type Event =
   | EventSessionWakeup
   | EventSessionHostAvailability
   | EventSessionHostContinuation
+  | EventWorkflowRunUpdated
 
 export type QuestionReplied = {
   sessionID: string
@@ -1148,6 +1150,39 @@ export type QuestionTool = {
 
 export type QuestionAnswer = Array<string>
 
+export type WorkflowPhaseInfo = {
+  title: string
+  detail?: string
+  total: number
+  running: number
+  done: number
+  error: number
+  skipped: number
+}
+
+export type WorkflowRunInfo = {
+  id: string
+  sessionID: string
+  name: string
+  description: string
+  status: "running" | "paused" | "completed" | "error" | "stopped"
+  phases: Array<WorkflowPhaseInfo>
+  agents: number
+  running: number
+  done: number
+  error: number
+  skipped: number
+  cached: number
+  tokens: number
+  tools: number
+  size: "small" | "medium" | "large" | "unrestricted"
+  started: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  ended?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  dir: string
+  script: string
+  error_message?: string
+}
+
 export type GlobalEvent = {
   directory: string
   project?: string
@@ -1275,6 +1310,7 @@ export type GlobalEvent = {
     | EventSessionWakeup
     | EventSessionHostAvailability
     | EventSessionHostContinuation
+    | EventWorkflowRunUpdated
     | {
         id: string
         type: "models-dev.refreshed"
@@ -2210,6 +2246,13 @@ export type GlobalEvent = {
           stage: "checking" | "syncing" | "creating"
         }
       }
+    | {
+        id: string
+        type: "workflow.run.updated"
+        properties: {
+          run: WorkflowRunInfo
+        }
+      }
     | SyncEventSessionCreated
     | SyncEventSessionUpdated
     | SyncEventSessionDeleted
@@ -2749,6 +2792,9 @@ export type Config = {
     speech_to_text_base_url?: string
     speech_to_text_api_key?: string
     openTelemetry?: boolean
+    workflows?: boolean
+    ultracode?: boolean
+    workflow_size?: "small" | "medium" | "large" | "unrestricted"
     primary_tools?: Array<string>
     continue_loop_on_deny?: boolean
     sandbox?: boolean
@@ -2877,6 +2923,7 @@ export type Provider = {
 
 export type ExperimentalCapabilities = {
   backgroundSubagents: boolean
+  workflows: boolean
 }
 
 export type ConsoleState = {
@@ -5249,6 +5296,77 @@ export type MemoryApiServerError = {
   }
 }
 
+export type WorkflowWorktree = {
+  path: string
+  branch?: string
+  changed: boolean
+}
+
+export type WorkflowAgentInfo = {
+  id: string
+  index: number
+  label: string
+  phase?: string
+  group?: string
+  status: "queued" | "running" | "completed" | "error" | "skipped" | "cached"
+  sessionID?: string
+  model?: string
+  variant?: string
+  agentType: string
+  tokens: number
+  tools: number
+  started?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  ended?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  prompt: string
+  result?: string
+  error?: string
+  worktree?: WorkflowWorktree
+}
+
+export type WorkflowRunDetail = {
+  id: string
+  sessionID: string
+  name: string
+  description: string
+  status: "running" | "paused" | "completed" | "error" | "stopped"
+  phases: Array<WorkflowPhaseInfo>
+  agents: number
+  running: number
+  done: number
+  error: number
+  skipped: number
+  cached: number
+  tokens: number
+  tools: number
+  size: "small" | "medium" | "large" | "unrestricted"
+  started: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  ended?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  dir: string
+  script: string
+  error_message?: string
+  logs: Array<string>
+  list: Array<WorkflowAgentInfo>
+  result?: string
+}
+
+export type WorkflowSaved = {
+  path: string
+}
+
+export type WorkflowSaveError = {
+  message: string
+}
+
+export type UltracodeState = {
+  enabled: boolean
+  available: boolean
+  size: "small" | "medium" | "large" | "unrestricted"
+}
+
+export type UltracodeSet = {
+  enabled: boolean
+}
+
 export type SessionsResponse = {
   data: Array<SessionV2Info>
   cursor: {
@@ -5428,6 +5546,29 @@ export type SessionHostAvailability2 = {
   }
 }
 
+export type WorkflowRunInfo4 = {
+  id: string
+  sessionID: string
+  name: string
+  description: string
+  status: "running" | "paused" | "completed" | "error" | "stopped"
+  phases: Array<WorkflowPhaseInfo>
+  agents: number
+  running: number
+  done: number
+  error: number
+  skipped: number
+  cached: number
+  tokens: number
+  tools: number
+  size: "small" | "medium" | "large" | "unrestricted"
+  started: number | "NaN" | "Infinity" | "-Infinity"
+  ended?: number | "NaN" | "Infinity" | "-Infinity"
+  dir: string
+  script: string
+  error_message?: string
+}
+
 export type V2Event =
   | ModelsDevRefreshed
   | IntegrationUpdated
@@ -5525,6 +5666,7 @@ export type V2Event =
   | SessionWakeup
   | SessionHostAvailability2
   | SessionHostContinuation
+  | WorkflowRunUpdated
 
 export type V2EventStream = string
 
@@ -7023,6 +7165,14 @@ export type EventSessionHostContinuation = {
     operationKey: string
     directory: string
     stage: "checking" | "syncing" | "creating"
+  }
+}
+
+export type EventWorkflowRunUpdated = {
+  id: string
+  type: "workflow.run.updated"
+  properties: {
+    run: WorkflowRunInfo
   }
 }
 
@@ -10090,6 +10240,23 @@ export type SessionHostContinuation = {
   }
 }
 
+export type WorkflowRunUpdated = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "workflow.run.updated"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    run: WorkflowRunInfo4
+  }
+}
+
 export type QuestionV2Request = {
   id: string
   sessionID: string
@@ -11164,6 +11331,14 @@ export type EventSessionHostContinuation1 = {
     operationKey: string
     directory: string
     stage: "checking" | "syncing" | "creating"
+  }
+}
+
+export type EventWorkflowRunUpdated1 = {
+  id: string
+  type: "workflow.run.updated"
+  properties: {
+    run: WorkflowRunInfo4
   }
 }
 
@@ -14385,6 +14560,7 @@ export type SessionPromptData = {
       activeFile?: string
       shell?: string
     }
+    ultracode?: boolean
     parts: Array<TextPartInput | FilePartInput | AgentPartInput | SubtaskPartInput>
   }
   path: {
@@ -14746,6 +14922,7 @@ export type SessionPromptAsyncData = {
       activeFile?: string
       shell?: string
     }
+    ultracode?: boolean
     parts: Array<TextPartInput | FilePartInput | AgentPartInput | SubtaskPartInput>
   }
   path: {
@@ -14789,6 +14966,7 @@ export type SessionCommandData = {
     command: string
     variant?: string
     snapshotInitialization?: "wait"
+    ultracode?: boolean
     parts?: Array<{
       id?: string
       type: "file"
@@ -21067,6 +21245,314 @@ export type MemoryPurgeResponses = {
 }
 
 export type MemoryPurgeResponse = MemoryPurgeResponses[keyof MemoryPurgeResponses]
+
+export type WorkflowListData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+    sessionID?: string
+  }
+  url: "/kilocode/workflow"
+}
+
+export type WorkflowListErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type WorkflowListError = WorkflowListErrors[keyof WorkflowListErrors]
+
+export type WorkflowListResponses = {
+  /**
+   * Workflow runs
+   */
+  200: Array<WorkflowRunInfo>
+}
+
+export type WorkflowListResponse = WorkflowListResponses[keyof WorkflowListResponses]
+
+export type WorkflowGetData = {
+  body?: never
+  path: {
+    runID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/kilocode/workflow/{runID}"
+}
+
+export type WorkflowGetErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * Not found
+   */
+  404: NotFoundError
+}
+
+export type WorkflowGetError = WorkflowGetErrors[keyof WorkflowGetErrors]
+
+export type WorkflowGetResponses = {
+  /**
+   * Workflow run detail
+   */
+  200: WorkflowRunDetail
+}
+
+export type WorkflowGetResponse = WorkflowGetResponses[keyof WorkflowGetResponses]
+
+export type WorkflowStopData = {
+  body?: never
+  path: {
+    runID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/kilocode/workflow/{runID}/stop"
+}
+
+export type WorkflowStopErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * Not found
+   */
+  404: NotFoundError
+}
+
+export type WorkflowStopError = WorkflowStopErrors[keyof WorkflowStopErrors]
+
+export type WorkflowStopResponses = {
+  /**
+   * Stopped workflow run
+   */
+  200: WorkflowRunInfo
+}
+
+export type WorkflowStopResponse = WorkflowStopResponses[keyof WorkflowStopResponses]
+
+export type WorkflowPauseData = {
+  body?: never
+  path: {
+    runID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/kilocode/workflow/{runID}/pause"
+}
+
+export type WorkflowPauseErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * Not found
+   */
+  404: NotFoundError
+}
+
+export type WorkflowPauseError = WorkflowPauseErrors[keyof WorkflowPauseErrors]
+
+export type WorkflowPauseResponses = {
+  /**
+   * Paused workflow run
+   */
+  200: WorkflowRunInfo
+}
+
+export type WorkflowPauseResponse = WorkflowPauseResponses[keyof WorkflowPauseResponses]
+
+export type WorkflowResumeData = {
+  body?: never
+  path: {
+    runID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/kilocode/workflow/{runID}/resume"
+}
+
+export type WorkflowResumeErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * Not found
+   */
+  404: NotFoundError
+}
+
+export type WorkflowResumeError = WorkflowResumeErrors[keyof WorkflowResumeErrors]
+
+export type WorkflowResumeResponses = {
+  /**
+   * Resumed workflow run
+   */
+  200: WorkflowRunInfo
+}
+
+export type WorkflowResumeResponse = WorkflowResumeResponses[keyof WorkflowResumeResponses]
+
+export type WorkflowAgentStopData = {
+  body?: never
+  path: {
+    runID: string
+    agentID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/kilocode/workflow/{runID}/agent/{agentID}/stop"
+}
+
+export type WorkflowAgentStopErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * Not found
+   */
+  404: NotFoundError
+}
+
+export type WorkflowAgentStopError = WorkflowAgentStopErrors[keyof WorkflowAgentStopErrors]
+
+export type WorkflowAgentStopResponses = {
+  /**
+   * Workflow agent stopped
+   */
+  200: boolean
+}
+
+export type WorkflowAgentStopResponse = WorkflowAgentStopResponses[keyof WorkflowAgentStopResponses]
+
+export type WorkflowSaveData = {
+  body?: {
+    scope: "project" | "global"
+  }
+  path: {
+    runID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/kilocode/workflow/{runID}/save"
+}
+
+export type WorkflowSaveErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * Not found
+   */
+  404: NotFoundError
+  /**
+   * WorkflowSaveError
+   */
+  422: WorkflowSaveError
+}
+
+export type WorkflowSaveError2 = WorkflowSaveErrors[keyof WorkflowSaveErrors]
+
+export type WorkflowSaveResponses = {
+  /**
+   * Saved workflow file
+   */
+  200: WorkflowSaved
+}
+
+export type WorkflowSaveResponse = WorkflowSaveResponses[keyof WorkflowSaveResponses]
+
+export type UltracodeGetData = {
+  body?: never
+  path?: never
+  query: {
+    directory?: string
+    workspace?: string
+    sessionID: string
+  }
+  url: "/kilocode/ultracode"
+}
+
+export type UltracodeGetErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * Not found
+   */
+  404: NotFoundError
+}
+
+export type UltracodeGetError = UltracodeGetErrors[keyof UltracodeGetErrors]
+
+export type UltracodeGetResponses = {
+  /**
+   * Ultracode state
+   */
+  200: UltracodeState
+}
+
+export type UltracodeGetResponse = UltracodeGetResponses[keyof UltracodeGetResponses]
+
+export type UltracodeSetData = {
+  body?: {
+    sessionID: string
+    enabled: boolean
+  }
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/kilocode/ultracode"
+}
+
+export type UltracodeSetErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * Not found
+   */
+  404: NotFoundError
+}
+
+export type UltracodeSetError = UltracodeSetErrors[keyof UltracodeSetErrors]
+
+export type UltracodeSetResponses = {
+  /**
+   * Ultracode state
+   */
+  200: UltracodeSet
+}
+
+export type UltracodeSetResponse = UltracodeSetResponses[keyof UltracodeSetResponses]
 
 export type V2HealthGetData = {
   body?: never
