@@ -44,7 +44,7 @@ describe("session action routes", () => {
         const res = yield* requestInDirectory("/experimental/capabilities", test.directory)
 
         expect(res.status).toBe(200)
-        expect(yield* res.json).toEqual({ backgroundSubagents: true })
+        expect(yield* res.json).toEqual({ backgroundSubagents: true, workflows: true })
       }),
     { git: true },
   )

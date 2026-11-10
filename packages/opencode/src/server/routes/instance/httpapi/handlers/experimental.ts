@@ -17,6 +17,7 @@ import { Filesystem } from "@/util/filesystem" // kilocode_change
 import { Review } from "@/kilocode/review/review" // kilocode_change
 import { WorktreeDiff } from "@/kilocode/review/worktree-diff" // kilocode_change
 import { WorktreeFamily } from "@/kilocode/worktree-family" // kilocode_change
+import { KiloWorkflowEnabled } from "@/kilocode/workflow/enabled" // kilocode_change
 import { Worktree } from "@/worktree"
 import { Effect, Option } from "effect"
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse"
@@ -54,7 +55,13 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
     const flags = yield* RuntimeFlags.Service
 
     const capabilities = Effect.fn("ExperimentalHttpApi.capabilities")(function* () {
-      return { backgroundSubagents: flags.experimentalBackgroundSubagents }
+      // kilocode_change start - dynamic workflows and ultracode are available
+      const cfg = yield* config.get()
+      return {
+        backgroundSubagents: flags.experimentalBackgroundSubagents,
+        workflows: KiloWorkflowEnabled.enabled(cfg, flags),
+      }
+      // kilocode_change end
     })
 
     const getConsole = Effect.fn("ExperimentalHttpApi.console")(function* () {

@@ -33,6 +33,7 @@ import { sessionHostHandlers } from "./handlers/session-host"
 import { sessionImportHandlers } from "./handlers/session-import"
 import { suggestionHandlers } from "./handlers/suggestion"
 import { telemetryHandlers } from "./handlers/telemetry"
+import { workflowHandlers } from "./handlers/workflow"
 
 export const provide = Layer.provide([
   agentBuilderHandlers,
@@ -57,6 +58,7 @@ export const provide = Layer.provide([
   sessionImportHandlers,
   suggestionHandlers,
   telemetryHandlers,
+  workflowHandlers,
 ])
 
 export function provideListener(opts?: CorsOptions) {

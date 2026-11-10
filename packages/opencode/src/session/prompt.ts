@@ -100,6 +100,8 @@ import { KiloSessionSteering } from "@/kilocode/session/steering" // kilocode_ch
 import { Goal } from "@/kilocode/session/goal/runner" // kilocode_change
 import { GoalPolicy } from "@/kilocode/session/goal/policy" // kilocode_change
 import { GoalState } from "@/kilocode/session/goal/state" // kilocode_change
+import { KiloUltracode } from "@/kilocode/workflow/ultracode" // kilocode_change
+import { KiloStructured } from "@/kilocode/session/structured" // kilocode_change
 
 // @ts-ignore
 globalThis.AI_SDK_LOG_WARNINGS = false
@@ -1452,6 +1454,14 @@ export const layer = Layer.effect(
         const human = input.parts.some((part) => part.type !== "text" || !part.synthetic)
         const ticket = prior ?? (yield* control.begin(input.sessionID, input.noReply !== true && human))
         // kilocode_change end
+        // kilocode_change start - persist the session-level ultracode toggle before the session is read
+        if (input.ultracode !== undefined) {
+          yield* KiloUltracode.set(input.sessionID, input.ultracode).pipe(
+            Effect.provideService(Session.Service, sessions),
+            Effect.orDie,
+          )
+        }
+        // kilocode_change end
         const session = yield* sessions.get(input.sessionID).pipe(Effect.orDie)
         yield* revert.cleanup(session)
         // kilocode_change start - recover interrupted Kilo turns before accepting a follow-up
@@ -1721,6 +1731,7 @@ export const layer = Layer.effect(
           Effect.provideService(RuntimeFlags.Service, flags),
           Effect.provideService(FSUtil.Service, fsys),
           Effect.provideService(Session.Service, sessions),
+          Effect.provideService(Config.Service, config), // kilocode_change - ultracode reminders read the workflow config
         )
 
         const msg: MessageV2.Assistant = {
@@ -1872,7 +1883,7 @@ export const layer = Layer.effect(
             ],
             tools,
             model,
-            toolChoice: format.type === "json_schema" ? "required" : undefined,
+            toolChoice: format.type === "json_schema" ? KiloStructured.choice(session) : undefined, // kilocode_change - workflow agents use "auto" + retries
             // kilocode_change start - provider-reported context size feeds the output-token cap
             // (see KiloLLM.capOutputTokens); summaries and trailing unfinished assistants invalidate it.
             reportedContextTokens: KiloSessionOverflow.baseline({
@@ -2328,6 +2339,14 @@ export const layer = Layer.effect(
     // kilocode_change end
 
     const command = Effect.fn("SessionPrompt.command")(function* (input: CommandInput) {
+      // kilocode_change start - persist the ultracode toggle for every command path, including /goal and resume
+      if (input.ultracode !== undefined) {
+        yield* KiloUltracode.set(input.sessionID, input.ultracode).pipe(
+          Effect.provideService(Session.Service, sessions),
+          Effect.orDie,
+        )
+      }
+      // kilocode_change end
       if (input.command === "goal") return yield* goals.command(input) // kilocode_change
       const ticket = yield* control.begin(input.sessionID, false) // kilocode_change
       yield* Effect.logInfo("command", {
@@ -2488,6 +2507,7 @@ export const layer = Layer.effect(
           parts,
           variant: isSubtask ? input.variant : variant, // kilocode_change
           snapshotInitialization: input.snapshotInitialization, // kilocode_change
+          ultracode: input.ultracode, // kilocode_change
         },
         yield* control.begin(input.sessionID, true, ticket),
       ) // kilocode_change
@@ -2539,6 +2559,11 @@ export const PromptInput = Schema.Struct({
   // kilocode_change end
   // kilocode_change start - reuse shared editor context schema
   editorContext: Schema.optional(MessageV2.EditorContext),
+  // kilocode_change end
+  // kilocode_change start - session-level ultracode toggle (persisted in session metadata)
+  ultracode: Schema.optional(Schema.Boolean).annotate({
+    description: "Turn ultracode on or off for this session. The setting persists until changed; omit to keep it.",
+  }),
   // kilocode_change end
   parts: Schema.Array(
     Schema.Union([
@@ -2593,6 +2618,11 @@ export const CommandInput = Schema.Struct({
   // kilocode_change start - managed product slow-snapshot policy
   snapshotInitialization: Schema.optional(Schema.Literal("wait")).annotate({
     description: "Wait silently if snapshot initialization is slow instead of asking the user.",
+  }),
+  // kilocode_change end
+  // kilocode_change start - session-level ultracode toggle (persisted in session metadata)
+  ultracode: Schema.optional(Schema.Boolean).annotate({
+    description: "Turn ultracode on or off for this session. The setting persists until changed; omit to keep it.",
   }),
   // kilocode_change end
   // Inlined (no identifier annotation) to keep the original SDK output — the

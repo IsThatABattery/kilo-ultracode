@@ -29,6 +29,7 @@ const ConsoleStateResponse = Schema.Struct({
 
 const CapabilitiesResponse = Schema.Struct({
   backgroundSubagents: Schema.Boolean,
+  workflows: Schema.Boolean, // kilocode_change - dynamic workflows and ultracode are available
 }).annotate({ identifier: "ExperimentalCapabilities" })
 
 const ConsoleOrgOption = Schema.Struct({

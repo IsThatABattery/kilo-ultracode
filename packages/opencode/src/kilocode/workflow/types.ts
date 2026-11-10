@@ -41,6 +41,9 @@ export type AgentStatus = "queued" | "running" | "completed" | "error" | "skippe
 
 export type Tokens = { input: number; output: number; reasoning: number; total: number }
 
+/** Worktree an isolation: 'worktree' agent ran in; kept (with a branch) only when it changed. */
+export type WorktreeResult = { path: string; branch?: string; changed: boolean }
+
 /** Outcome of one agent() call as produced by the spawn layer. */
 export type Outcome =
   | {
@@ -50,8 +53,11 @@ export type Outcome =
       tokens: Tokens
       tools: number
       model: { providerID: string; modelID: string }
+      /** Variant actually applied (after mapping `effort`), if any. */
       variant?: string
-      worktree?: { path: string; branch?: string; changed: boolean }
+      worktree?: WorktreeResult
+      /** Non-fatal note, e.g. opts.model was unavailable and the inherited model ran instead. */
+      warning?: string
     }
   | {
       status: "error"
@@ -61,8 +67,17 @@ export type Outcome =
       sessionID?: string
       tokens: Tokens
       tools: number
+      worktree?: WorktreeResult
+      warning?: string
     }
-  | { status: "skipped"; sessionID?: string; tokens: Tokens; tools: number }
+  | {
+      status: "skipped"
+      sessionID?: string
+      tokens: Tokens
+      tools: number
+      worktree?: WorktreeResult
+      warning?: string
+    }
 
 export type PhaseInfo = {
   title: string

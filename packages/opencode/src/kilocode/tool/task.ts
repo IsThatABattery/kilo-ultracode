@@ -197,6 +197,8 @@ export namespace KiloTask {
       ...(task ? [] : [{ permission: "task", pattern: "*", action: "deny" as const }]),
       { permission: "question", pattern: "*", action: "deny" },
       { permission: "suggest", pattern: "*", action: "deny" },
+      // Delegated sessions never start dynamic workflows; only the main session orchestrates.
+      { permission: "workflow", pattern: "*", action: "deny" },
       ...rules,
     ]
   }

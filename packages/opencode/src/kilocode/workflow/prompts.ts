@@ -71,8 +71,7 @@ export namespace WorkflowPrompts {
     "Ultracode is on: optimize for the most exhaustive, correct answer — not the fastest or cheapest. Use the Workflow tool on every substantive task; token cost is not a constraint. See the **Ultracode** section and quality patterns in the workflow authoring reference. Solo only on conversational/trivial turns."
 
   /** Reminder after ultracode is switched off mid-session (the authoring reference refers to it). */
-  export const ULTRACODE_OFF =
-    "Ultracode is off: revert to the opt-in rule in the Workflow tool description."
+  export const ULTRACODE_OFF = "Ultracode is off: revert to the opt-in rule in the Workflow tool description."
 
   /** One-turn opt-in when a human-typed prompt contains the keyword. */
   export const ULTRACODE_KEYWORD =
