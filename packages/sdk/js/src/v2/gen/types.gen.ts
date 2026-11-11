@@ -1176,8 +1176,8 @@ export type WorkflowRunInfo = {
   tokens: number
   tools: number
   size: "small" | "medium" | "large" | "unrestricted"
-  started: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-  ended?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  started: number
+  ended?: number
   dir: string
   script: string
   error_message?: string
@@ -5315,8 +5315,8 @@ export type WorkflowAgentInfo = {
   agentType: string
   tokens: number
   tools: number
-  started?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-  ended?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  started?: number
+  ended?: number
   prompt: string
   result?: string
   error?: string
@@ -5339,8 +5339,8 @@ export type WorkflowRunDetail = {
   tokens: number
   tools: number
   size: "small" | "medium" | "large" | "unrestricted"
-  started: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-  ended?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  started: number
+  ended?: number
   dir: string
   script: string
   error_message?: string
@@ -5544,29 +5544,6 @@ export type SessionHostAvailability2 = {
     state: "available" | "unavailable"
     reason?: string
   }
-}
-
-export type WorkflowRunInfo4 = {
-  id: string
-  sessionID: string
-  name: string
-  description: string
-  status: "running" | "paused" | "completed" | "error" | "stopped"
-  phases: Array<WorkflowPhaseInfo>
-  agents: number
-  running: number
-  done: number
-  error: number
-  skipped: number
-  cached: number
-  tokens: number
-  tools: number
-  size: "small" | "medium" | "large" | "unrestricted"
-  started: number | "NaN" | "Infinity" | "-Infinity"
-  ended?: number | "NaN" | "Infinity" | "-Infinity"
-  dir: string
-  script: string
-  error_message?: string
 }
 
 export type V2Event =
@@ -10253,7 +10230,7 @@ export type WorkflowRunUpdated = {
   }
   location?: LocationRef
   data: {
-    run: WorkflowRunInfo4
+    run: WorkflowRunInfo
   }
 }
 
@@ -11338,7 +11315,7 @@ export type EventWorkflowRunUpdated1 = {
   id: string
   type: "workflow.run.updated"
   properties: {
-    run: WorkflowRunInfo4
+    run: WorkflowRunInfo
   }
 }
 

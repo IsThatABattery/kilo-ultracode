@@ -3,7 +3,8 @@
 //
 // Runs are forked into the instance's InstanceState scope, so they outlive the tool call that launched them and stop
 // when the instance is disposed. They are deliberately NOT BackgroundJobs: the session-centric job cancel paths
-// (tree cancel on Esc, the background-jobs cancel route) would kill or misroute them.
+// (tree cancel on Esc, the background-jobs cancel route) would kill or misroute them. Once a run left memory (server
+// restart, instance disposal, retention limit) get and list read its persisted run.json instead.
 
 import path from "path"
 import { Context, Effect, Layer, Schema, Scope } from "effect"
@@ -25,6 +26,7 @@ import type { TaskPromptOps } from "@/tool/task"
 import { errorMessage } from "@/util/error"
 import { Worktree } from "@/worktree"
 import { SessionDrain } from "@/kilocode/session/drain"
+import { WorkflowArchive } from "./archive"
 import { WorkflowJournal } from "./journal"
 import { WorkflowMeta } from "./meta"
 import { WorkflowRuntime } from "./runtime"
@@ -118,6 +120,8 @@ export namespace KiloWorkflow {
     const drain = yield* SessionDrain.Service
     const events = yield* EventV2Bridge.Service
     const pools = new Map<string, WorkflowRuntime.Pool>()
+    // Runs still in flight in any instance, by id: reads (and the resume guard) reach them from every directory.
+    const live = new Map<string, WorkflowRuntime.Run>()
 
     const state = yield* InstanceState.make<State>(() =>
       Effect.gen(function* () {
@@ -191,7 +195,7 @@ export namespace KiloWorkflow {
       const registry = yield* InstanceState.get(state)
       const id = input.resume ?? WorkflowRuntime.id()
       const target = dir(input.sessionID, id)
-      const prior = registry.runs.get(id)
+      const prior = registry.runs.get(id) ?? live.get(id)
       const active = (run?: WorkflowRuntime.Run) => {
         if (!run || WorkflowRuntime.terminal(run.info().status)) return undefined
         return new Failure({
@@ -207,7 +211,7 @@ export namespace KiloWorkflow {
         })
       }
       // Another launch may have claimed the id while the journal loaded.
-      const raced = active(registry.runs.get(id))
+      const raced = active(registry.runs.get(id) ?? live.get(id))
       if (raced) return yield* raced
       const cfg = yield* config.get()
       const run = WorkflowRuntime.make(
@@ -235,10 +239,18 @@ export namespace KiloWorkflow {
         },
       )
       registry.runs.set(id, run)
+      live.set(id, run)
       // Keep every active run and the most recent finished ones; their files stay on disk for resume.
       const ended = [...registry.runs.values()].filter((item) => WorkflowRuntime.terminal(item.info().status))
       for (const item of ended.slice(0, Math.max(0, ended.length - KEEP))) registry.runs.delete(item.id)
-      yield* run.run.pipe(Effect.forkIn(registry.scope))
+      yield* run.run.pipe(
+        Effect.ensuring(
+          Effect.sync(() => {
+            if (live.get(id) === run) live.delete(id)
+          }),
+        ),
+        Effect.forkIn(registry.scope),
+      )
       return { info: run.info(), meta: parsed.meta, dir: target, script: path.join(target, "script.js") }
     })
 
@@ -246,14 +258,24 @@ export namespace KiloWorkflow {
 
     const list = Effect.fn("KiloWorkflow.list")(function* (sessionID?: string) {
       const registry = yield* InstanceState.get(state)
-      return [...registry.runs.values()]
-        .map((run) => run.info())
-        .filter((info) => sessionID === undefined || info.sessionID === sessionID)
-        .toSorted((a, b) => a.started - b.started)
+      const memory = [...registry.runs.values()].map((run) => run.info())
+      if (sessionID === undefined) return memory.toSorted((a, b) => a.started - b.started)
+      // One session's runs: this instance's, those in flight elsewhere, then the persisted rest.
+      const runs = new Map(memory.filter((info) => info.sessionID === sessionID).map((info) => [info.id, info]))
+      for (const run of live.values()) {
+        const info = run.info()
+        if (info.sessionID === sessionID && !runs.has(info.id)) runs.set(info.id, info)
+      }
+      for (const detail of yield* WorkflowArchive.list(root(), sessionID, new Set(runs.keys()))) {
+        runs.set(detail.id, WorkflowArchive.summary(detail))
+      }
+      return [...runs.values()].toSorted((a, b) => a.started - b.started)
     })
 
     const get = Effect.fn("KiloWorkflow.get")(function* (runID: string) {
-      return (yield* find(runID))?.detail()
+      const run = (yield* find(runID)) ?? live.get(runID)
+      if (run) return run.detail()
+      return yield* WorkflowArchive.get(root(), runID)
     })
 
     const control = (name: string, act: (run: WorkflowRuntime.Run) => Effect.Effect<void>) =>

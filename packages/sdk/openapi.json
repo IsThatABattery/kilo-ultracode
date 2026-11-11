@@ -34295,50 +34295,10 @@
             "enum": ["small", "medium", "large", "unrestricted"]
           },
           "started": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "string",
-                "enum": ["NaN"]
-              },
-              {
-                "type": "string",
-                "enum": ["Infinity"]
-              },
-              {
-                "type": "string",
-                "enum": ["-Infinity"]
-              },
-              {
-                "type": "string",
-                "enum": ["Infinity", "-Infinity", "NaN"]
-              }
-            ]
+            "type": "number"
           },
           "ended": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "string",
-                "enum": ["NaN"]
-              },
-              {
-                "type": "string",
-                "enum": ["Infinity"]
-              },
-              {
-                "type": "string",
-                "enum": ["-Infinity"]
-              },
-              {
-                "type": "string",
-                "enum": ["Infinity", "-Infinity", "NaN"]
-              }
-            ]
+            "type": "number"
           },
           "dir": {
             "type": "string"
@@ -47353,50 +47313,10 @@
             "minimum": 0
           },
           "started": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "string",
-                "enum": ["NaN"]
-              },
-              {
-                "type": "string",
-                "enum": ["Infinity"]
-              },
-              {
-                "type": "string",
-                "enum": ["-Infinity"]
-              },
-              {
-                "type": "string",
-                "enum": ["Infinity", "-Infinity", "NaN"]
-              }
-            ]
+            "type": "number"
           },
           "ended": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "string",
-                "enum": ["NaN"]
-              },
-              {
-                "type": "string",
-                "enum": ["Infinity"]
-              },
-              {
-                "type": "string",
-                "enum": ["-Infinity"]
-              },
-              {
-                "type": "string",
-                "enum": ["Infinity", "-Infinity", "NaN"]
-              }
-            ]
+            "type": "number"
           },
           "prompt": {
             "type": "string"
@@ -47476,50 +47396,10 @@
             "enum": ["small", "medium", "large", "unrestricted"]
           },
           "started": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "string",
-                "enum": ["NaN"]
-              },
-              {
-                "type": "string",
-                "enum": ["Infinity"]
-              },
-              {
-                "type": "string",
-                "enum": ["-Infinity"]
-              },
-              {
-                "type": "string",
-                "enum": ["Infinity", "-Infinity", "NaN"]
-              }
-            ]
+            "type": "number"
           },
           "ended": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "string",
-                "enum": ["NaN"]
-              },
-              {
-                "type": "string",
-                "enum": ["Infinity"]
-              },
-              {
-                "type": "string",
-                "enum": ["-Infinity"]
-              },
-              {
-                "type": "string",
-                "enum": ["Infinity", "-Infinity", "NaN"]
-              }
-            ]
+            "type": "number"
           },
           "dir": {
             "type": "string"
@@ -48148,137 +48028,6 @@
           }
         },
         "required": ["id", "type", "data"],
-        "additionalProperties": false
-      },
-      "WorkflowRunInfo4": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "sessionID": {
-            "type": "string"
-          },
-          "name": {
-            "type": "string"
-          },
-          "description": {
-            "type": "string"
-          },
-          "status": {
-            "type": "string",
-            "enum": ["running", "paused", "completed", "error", "stopped"]
-          },
-          "phases": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/WorkflowPhaseInfo"
-            }
-          },
-          "agents": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "running": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "done": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "error": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "skipped": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "cached": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "tokens": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "tools": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "size": {
-            "type": "string",
-            "enum": ["small", "medium", "large", "unrestricted"]
-          },
-          "started": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "string",
-                "enum": ["NaN"]
-              },
-              {
-                "type": "string",
-                "enum": ["Infinity"]
-              },
-              {
-                "type": "string",
-                "enum": ["-Infinity"]
-              }
-            ]
-          },
-          "ended": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "string",
-                "enum": ["NaN"]
-              },
-              {
-                "type": "string",
-                "enum": ["Infinity"]
-              },
-              {
-                "type": "string",
-                "enum": ["-Infinity"]
-              }
-            ]
-          },
-          "dir": {
-            "type": "string"
-          },
-          "script": {
-            "type": "string"
-          },
-          "error_message": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "sessionID",
-          "name",
-          "description",
-          "status",
-          "phases",
-          "agents",
-          "running",
-          "done",
-          "error",
-          "skipped",
-          "cached",
-          "tokens",
-          "tools",
-          "size",
-          "started",
-          "dir",
-          "script"
-        ],
         "additionalProperties": false
       },
       "V2Event": {
@@ -63052,7 +62801,7 @@
             "type": "object",
             "properties": {
               "run": {
-                "$ref": "#/components/schemas/WorkflowRunInfo4"
+                "$ref": "#/components/schemas/WorkflowRunInfo"
               }
             },
             "required": ["run"],
@@ -66430,7 +66179,7 @@
             "type": "object",
             "properties": {
               "run": {
-                "$ref": "#/components/schemas/WorkflowRunInfo4"
+                "$ref": "#/components/schemas/WorkflowRunInfo"
               }
             },
             "required": ["run"],

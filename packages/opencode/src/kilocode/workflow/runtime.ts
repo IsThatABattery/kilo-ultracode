@@ -12,6 +12,7 @@ import * as Log from "@opencode-ai/core/util/log"
 import { EffectBridge } from "@/effect/bridge"
 import type { TaskPromptOps } from "@/tool/task"
 import { errorMessage } from "@/util/error"
+import { WorkflowArchive } from "./archive"
 import { WorkflowJournal } from "./journal"
 import { WorkflowMeta } from "./meta"
 import type { WorkflowSandbox } from "./sandbox"
@@ -221,6 +222,8 @@ export namespace WorkflowRuntime {
     const leaders = new Map<string, Deferred.Deferred<void>>()
     const gate = Latch.makeUnsafe(true)
     const lock = Semaphore.makeUnsafe(width)
+    // run.json writes never overlap, so a periodic save can't land after the final one.
+    const saving = Semaphore.makeUnsafe(1)
     const replay = WorkflowJournal.replay(input.journal ?? [])
     const journal = WorkflowJournal.writer(path.join(input.dir, WorkflowJournal.FILE))
     const finished = Deferred.makeUnsafe<void>()
@@ -307,10 +310,12 @@ export namespace WorkflowRuntime {
         Effect.asVoid,
       )
 
-    const save = Effect.suspend(() => {
-      state.stale = false
-      return write("run.json", detail())
-    })
+    const save = saving.withPermits(1)(
+      Effect.suspend(() => {
+        state.stale = false
+        return write(WorkflowArchive.FILE, WorkflowArchive.record(detail()))
+      }),
+    )
 
     const tick = Effect.gen(function* () {
       state.ticks += 1
@@ -575,10 +580,14 @@ export namespace WorkflowRuntime {
       return Fiber.interruptAll([...live.values()])
     })
 
+    /** A resumed run keeps the previous journal's results it never reached, for the next resume. */
+    const keep = journal.restore(input.journal ?? [])
+
     const finish = (result: WorkflowSandbox.Result) =>
       Effect.gen(function* () {
         // Agents the script never awaited are moot once it returned.
         yield* halt
+        yield* keep
         if (state.status !== "stopped") state.status = result.ok ? "completed" : "error"
         if (!result.ok && state.status === "error") state.error = result.error
         if (result.ok) {
@@ -624,11 +633,13 @@ export namespace WorkflowRuntime {
       Effect.scoped,
       Effect.onInterrupt(() =>
         Effect.gen(function* () {
-          // The owning instance went away: record what happened, but there is no session left to notify.
+          // The owning instance went away: record and publish what happened, but there is no session left to notify.
           yield* halt
+          yield* keep
           if (!terminal(state.status)) state.status = "stopped"
           state.ended ??= Date.now()
           yield* save
+          yield* publish
           yield* Deferred.succeed(finished, undefined)
         }),
       ),
@@ -638,6 +649,7 @@ export namespace WorkflowRuntime {
           : Effect.gen(function* () {
               log.error("workflow run failed", { run: input.id, cause })
               yield* halt
+              yield* keep
               state.status = "error"
               state.error = errorMessage(Cause.squash(cause))
               state.ended ??= Date.now()

@@ -73,6 +73,35 @@ describe("WorkflowJournal.replay", () => {
   })
 })
 
+describe("WorkflowJournal.rest", () => {
+  const previous = [entry(3, "c", "c0"), entry(0, "a", "a0"), entry(1, "b", "b0"), entry(2, "a", "a1")]
+
+  test("keeps the occurrences of each key beyond the ones re-recorded", () => {
+    const kept = WorkflowJournal.rest(previous, new Map([["a", 1]]), 1)
+    expect(kept.map((item) => item.value)).toEqual(["b0", "a1", "c0"])
+    expect(kept.map((item) => item.index)).toEqual([1, 2, 3])
+    expect(
+      WorkflowJournal.rest(
+        previous,
+        new Map([
+          ["a", 2],
+          ["b", 1],
+          ["c", 1],
+        ]),
+        4,
+      ),
+    ).toEqual([])
+  })
+
+  test("shifts kept entries after this run's indexes, so they replay after its results for the same key", () => {
+    const kept = WorkflowJournal.rest(previous, new Map([["a", 1]]), 5)
+    expect(kept.map((item) => item.index)).toEqual([5, 6, 7])
+    const replay = WorkflowJournal.replay([entry(4, "a", "fresh"), ...kept])
+    expect(replay.take("a")).toEqual({ value: "fresh" })
+    expect(replay.take("a")).toEqual({ value: "a1" })
+  })
+})
+
 describe("WorkflowJournal files", () => {
   test("load returns undefined for a missing journal", async () => {
     await using dir = await tmpdir()
@@ -112,6 +141,25 @@ describe("WorkflowJournal files", () => {
     )
     const loaded = await Effect.runPromise(WorkflowJournal.load(file))
     expect(loaded).toEqual([entry(0, "a", { ok: true }), { ...entry(1, "b", "v"), phase: "Scan" }])
+  })
+
+  test("restore appends back the previous entries a resumed run never reached, once", async () => {
+    await using dir = await tmpdir()
+    const file = path.join(dir.path, "journal.jsonl")
+    const previous = [entry(0, "a", "a0"), entry(1, "b", "b0"), entry(2, "c", "c0")]
+    const writer = WorkflowJournal.writer(file)
+    await Effect.runPromise(writer.reset())
+    await Effect.runPromise(writer.append(entry(0, "a", "a0")))
+    await Effect.runPromise(writer.append(entry(1, "x", "x0")))
+    await Effect.runPromise(writer.restore(previous))
+    await Effect.runPromise(writer.restore(previous))
+    const loaded = await Effect.runPromise(WorkflowJournal.load(file))
+    expect(loaded?.map((item) => [item.key, item.index, item.value])).toEqual([
+      ["a", 0, "a0"],
+      ["x", 1, "x0"],
+      ["b", 2, "b0"],
+      ["c", 3, "c0"],
+    ])
   })
 
   test("reset truncates an existing journal", async () => {

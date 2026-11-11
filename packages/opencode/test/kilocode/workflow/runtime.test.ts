@@ -88,6 +88,8 @@ function launch(input: {
     notes,
     holds,
     finished: () => Effect.runPromise(Fiber.join(fiber)),
+    /** What disposing the owning instance does: interrupt the run fiber. */
+    interrupt: () => Effect.runPromise(Fiber.interrupt(fiber)),
   }
 }
 
@@ -333,6 +335,25 @@ describe("WorkflowRuntime", () => {
     expect(started.holds.active).toBe(0)
   })
 
+  test("when its instance goes away the run is persisted and published as stopped, without a notification", async () => {
+    await using tmp = await tmpdir()
+    const started = launch({
+      dir: tmp.path,
+      script: meta("disposed") + `await agent("a")\nreturn "unreachable"\n`,
+      spawn: () => Effect.never,
+    })
+    await until(() => started.run.info().running === 1, "a running agent")
+    await started.interrupt()
+    const last = started.published.at(-1)
+    expect(last?.status).toBe("stopped")
+    expect(last?.ended).toBeNumber()
+    expect(last?.skipped).toBe(1)
+    const persisted = await Bun.file(path.join(started.run.dir, "run.json")).json()
+    expect(persisted).toMatchObject({ status: "stopped", skipped: 1, pid: process.pid })
+    expect(started.notes).toEqual([])
+    expect(started.holds.active).toBe(0)
+  })
+
   test("pause lets running agents finish but starts no new ones until resume", async () => {
     await using tmp = await tmpdir()
     const gate = Deferred.makeUnsafe<void>()
@@ -416,7 +437,8 @@ describe("WorkflowRuntime", () => {
     expect(detail.list.map((item) => item.status)).toEqual(["cached", "completed", "completed"])
     expect(detail.cached).toBe(1)
     const rewritten = await Effect.runPromise(WorkflowJournal.load(path.join(second.run.dir, "journal.jsonl")))
-    expect(rewritten?.map((item) => item.value).toSorted()).toEqual(["v:one", "v:three", "v:two (edited)"])
+    // The replaced call's earlier result is kept as well, for a resume that reverts the edit.
+    expect(rewritten?.map((item) => item.value).toSorted()).toEqual(["v:one", "v:three", "v:two", "v:two (edited)"])
 
     // Same script again: every call replays.
     live.length = 0
@@ -424,6 +446,45 @@ describe("WorkflowRuntime", () => {
     await third.finished()
     expect(live).toEqual([])
     expect(third.run.info().cached).toBe(3)
+  })
+
+  test("a resumed run that stops early keeps the cached results it never reached", async () => {
+    await using tmp = await tmpdir()
+    const live: string[] = []
+    const spawn: Spawn = (input) =>
+      input.agent.prompt === "two (edited)"
+        ? Effect.never
+        : Effect.sync(() => {
+            live.push(input.agent.prompt)
+            return ok(`v:${input.agent.prompt}`)
+          })
+    const body = (second: string) =>
+      meta("keeps") +
+      `const a = await agent("one")\n` +
+      `const b = await agent(${JSON.stringify(second)})\n` +
+      `const c = await agent("three")\n` +
+      `return [a, b, c]\n`
+    const file = (dir: string) => path.join(dir, "journal.jsonl")
+    const first = launch({ dir: tmp.path, script: body("two"), spawn })
+    await first.finished()
+    const journal = await Effect.runPromise(WorkflowJournal.load(file(first.run.dir)))
+
+    // "one" replays, the edited call never finishes and the user stops the run before "three".
+    const second = launch({ dir: tmp.path, id: first.run.id, script: body("two (edited)"), journal, spawn })
+    await until(() => second.run.info().running === 1, "the edited agent running")
+    await Effect.runPromise(second.run.stop())
+    await second.finished()
+    const kept = await Effect.runPromise(WorkflowJournal.load(file(second.run.dir)))
+    expect(kept?.map((item) => item.value)).toEqual(["v:one", "v:two", "v:three"])
+    expect(kept?.map((item) => item.index)).toEqual([0, 1, 2])
+
+    // The original script resumes entirely from cache.
+    live.length = 0
+    const third = launch({ dir: tmp.path, id: first.run.id, script: body("two"), journal: kept, spawn })
+    await third.finished()
+    expect(live).toEqual([])
+    expect(third.run.info().cached).toBe(3)
+    expect(result(third.run.detail())).toEqual(["v:one", "v:two", "v:three"])
   })
 
   test("workflow() runs a nested script under a ▸ group, one level deep", async () => {

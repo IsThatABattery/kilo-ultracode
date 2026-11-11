@@ -38,8 +38,9 @@ export const RunInfo = Schema.Struct({
   tokens: NonNegativeInt,
   tools: NonNegativeInt,
   size: Size,
-  started: Schema.Number,
-  ended: Schema.optional(Schema.Number),
+  /** Epoch milliseconds. */
+  started: Schema.Finite,
+  ended: Schema.optional(Schema.Finite),
   dir: Schema.String,
   script: Schema.String,
   error_message: Schema.optional(Schema.String),
@@ -64,8 +65,9 @@ export const AgentInfo = Schema.Struct({
   agentType: Schema.String,
   tokens: NonNegativeInt,
   tools: NonNegativeInt,
-  started: Schema.optional(Schema.Number),
-  ended: Schema.optional(Schema.Number),
+  /** Epoch milliseconds. */
+  started: Schema.optional(Schema.Finite),
+  ended: Schema.optional(Schema.Finite),
   prompt: Schema.String,
   result: Schema.optional(Schema.String),
   error: Schema.optional(Schema.String),

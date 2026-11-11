@@ -515,6 +515,8 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
   private epoch = 0
   private sessionDirectories = new Map<string, string>() // Per-session directory overrides, such as Agent Manager worktrees.
   private readonly owners = new Map<string, { dir: string; project: string }>()
+  // Workflow agents running in their own worktree → that worktree and their launching session's directory.
+  private readonly isolated = new Map<string, { dir: string; home: string }>()
   private sessionGitDirectories = new Map<string, string>() // Stable Git root resolved for each session.
   private sessionGitRecoveries = new Set<string>() // Sessions whose older history was scanned for a Git root.
   private readonly aborts = new SessionAbort()
@@ -1503,7 +1505,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
             "kilo-code.new.openSubAgentViewer",
             message.sessionID,
             message.title,
-            this.getWorkspaceDirectory(message.parentSessionID),
+            this.isolated.get(message.sessionID)?.dir ?? this.getWorkspaceDirectory(message.parentSessionID),
           )
           break
         case "saveImage":
@@ -2494,7 +2496,10 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     // Inherit the parent's worktree directory so permission responses use
     // the correct backend Instance. Without this, child sessions in Agent
     // Manager worktrees fall back to workspace root and fail to find the
-    // pending permission request.
+    // pending permission request. A workflow agent in its own worktree keeps
+    // that worktree, even after an earlier release dropped its directory.
+    const own = this.isolated.get(sessionID)?.dir
+    if (own && !this.sessionDirectories.has(sessionID)) this.sessionDirectories.set(sessionID, own)
     if (!this.sessionDirectories.has(sessionID) && parentSessionID) {
       const dir = this.sessionDirectories.get(parentSessionID)
       if (dir) {
@@ -2718,6 +2723,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     this.inspectorSessionIds.delete(sessionID)
     this.sessionDirectories.delete(sessionID)
     this.owners.delete(sessionID)
+    this.isolated.delete(sessionID)
     this.sessionGitDirectories.delete(sessionID)
     this.sessionGitRecoveries.delete(sessionID)
     this.aborts.delete(sessionID)
@@ -6078,11 +6084,16 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
 
   // Activity events pass the directory gate for sessions this panel owns, so an inactive project's
   // sidebar row keeps a current state. The tracked-session check still applies to these events.
+  // A workflow agent run with isolation: 'worktree' lives outside the project's directories: its
+  // creation always passes, then its events from its own worktree pass as its launching session's would.
   private routed(event: ProviderEvent, directory?: string): boolean {
-    if (!ACTIVITY_EVENTS.has(event.type)) return false
+    if (event.type === "session.created" && workflowAgent(event.properties.info, (id) => this.tracked(id))) return true
     const props = event.properties
     const sid = "sessionID" in props && typeof props.sessionID === "string" ? props.sessionID : undefined
-    return sid !== undefined && this.owned(sid, directory)
+    if (sid === undefined) return false
+    const home = this.isolated.get(sid)?.home
+    const open = ACTIVITY_EVENTS.has(event.type) || (home !== undefined && this.isCurrentProjectDirectory(home))
+    return open && this.owned(sid, directory)
   }
 
   private isCurrentProjectSession(sessionID: string): boolean {
@@ -6221,14 +6232,24 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     return this.trackedSessionIds.has(sessionID)
   }
 
-  /** Track a workflow agent session of a tracked session so its permission and question prompts show. */
+  /**
+   * Track a workflow agent session of a tracked session so its permission and question prompts show.
+   * An agent run with isolation: 'worktree' lives in its own worktree, so record that directory: its
+   * events then pass the directory gate and its permission, question and abort replies reach its instance.
+   */
   private adoptWorkflowAgent(session: Session) {
     if (!workflowAgent(session, (id) => this.tracked(id))) return false
     this.trackedSessionIds.add(session.id)
     const parent = session.parentID ?? ""
+    const home = this.getWorkspaceDirectory(parent)
+    if (session.directory && !sameDirectory(session.directory, home)) {
+      this.isolated.set(session.id, { dir: session.directory, home })
+      this.sessionDirectories.set(session.id, session.directory)
+    }
     const dir = this.sessionDirectories.get(parent)
     if (dir && !this.sessionDirectories.has(session.id)) this.sessionDirectories.set(session.id, dir)
-    const git = this.sessionGitDirectories.get(parent)
+    // A worktree is its own checkout, so only an agent in its parent's directory shares the parent's Git root.
+    const git = this.isolated.has(session.id) ? undefined : this.sessionGitDirectories.get(parent)
     if (git && !this.sessionGitDirectories.has(session.id)) this.sessionGitDirectories.set(session.id, git)
     // sessionUpdated (not sessionCreated) only records the child, so it never becomes the open session.
     this.postMessage({ type: "sessionUpdated", session: this.sessionToWebview(session) })
@@ -6418,6 +6439,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     this.draftSessions.clear()
     this.sessionDirectories.clear()
     this.owners.clear()
+    this.isolated.clear()
     this.anacondaDesktop.dispose()
     this.aborts.clear()
     this.requests.clear()

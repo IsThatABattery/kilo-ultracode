@@ -75,7 +75,7 @@ describe("WorkflowView formatting", () => {
   test("summarizes a run as agents, tokens and elapsed time", () => {
     expect(WorkflowView.summary(run(), 81_000)).toBe("3/10 agents · 12k tok · 1m20s")
     expect(WorkflowView.summary(run({ ended: 31_000 }), 999_999)).toBe("3/10 agents · 12k tok · 30s")
-    expect(WorkflowView.summary(run({ agents: 1, done: 1, tokens: 0, started: "NaN" }), 5)).toBe("1/1 agent · 0 tok")
+    expect(WorkflowView.summary(run({ agents: 1, done: 1, tokens: 0, started: Number.NaN }), 5)).toBe("1/1 agent · 0 tok")
   })
 
   test("summarizes phase progress", () => {

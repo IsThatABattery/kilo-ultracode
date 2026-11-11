@@ -7,6 +7,8 @@ import { Database } from "@opencode-ai/core/database/database"
 import { SessionProjector } from "@opencode-ai/core/session/projector"
 import { MemoryService } from "@kilocode/kilo-memory/effect/service"
 import { afterEach, describe, expect } from "bun:test"
+import fs from "fs/promises"
+import path from "path"
 import { Effect, Layer } from "effect"
 import { Agent } from "../../../src/agent/agent"
 import { Config } from "../../../src/config/config"
@@ -176,6 +178,22 @@ describe("KiloWorkflow end to end", () => {
             const childRequest = (yield* llm.inputs).find((body) => child({ body }))
             expect(text(childRequest ?? {})).toContain("Say hello")
             expect(JSON.stringify(childRequest)).toContain(WorkflowPrompts.SUBAGENT_TEXT.split("\n")[0])
+
+            // A run no longer in memory (server restart, retention limit) is read back from its run.json.
+            const gone = "wf_00000000-old"
+            const dir = KiloWorkflow.dir(root.id, gone)
+            yield* Effect.promise(async () => {
+              await fs.mkdir(dir, { recursive: true })
+              const persisted = { ...detail, id: gone, dir, started: (detail?.started ?? 0) - 1000 }
+              await Bun.write(path.join(dir, "run.json"), JSON.stringify(persisted))
+            })
+            const restored = yield* service.get(gone)
+            expect(restored).toMatchObject({ id: gone, status: "completed", result: detail?.result })
+            expect(restored?.list).toEqual(detail?.list ?? [])
+            const listed = yield* service.list(root.id)
+            expect(listed.map((item) => item.id)).toEqual([gone, runID])
+            expect(listed[0]).not.toHaveProperty("list")
+            expect(yield* service.list("ses_unrelated")).toEqual([])
           }),
         { config },
       ),

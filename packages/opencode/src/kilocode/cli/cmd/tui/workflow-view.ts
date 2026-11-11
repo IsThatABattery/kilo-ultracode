@@ -28,7 +28,7 @@ export namespace WorkflowView {
     return typeof enabled === "boolean" ? enabled : fallback
   }
 
-  /** The SDK types run timestamps as `number | "NaN" | "Infinity"`; only finite numbers are real times. */
+  /** Epoch-millisecond timestamp, or undefined for anything that is not a finite number (missing, older servers). */
   export function time(value: unknown) {
     return typeof value === "number" && Number.isFinite(value) ? value : undefined
   }

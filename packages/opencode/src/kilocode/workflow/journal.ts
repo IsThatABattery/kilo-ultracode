@@ -2,7 +2,8 @@
 //
 // A resumed run replays the longest unchanged prefix of agent() calls: each call (in start order) looks up
 // sha256(prompt + canonical opts without label/phase) plus its occurrence index; after the first miss every later
-// call runs live.
+// call runs live. The resumed run rewrites the journal and, when it ends, appends back the previous entries it never
+// reached, so nothing cached is lost to an early stop.
 
 import { createHash } from "crypto"
 import fs from "fs/promises"
@@ -118,9 +119,35 @@ export namespace WorkflowJournal {
     }
   }
 
+  /**
+   * Entries of a previous journal that a resumed run did not record again: per key, the occurrences beyond the
+   * `counts` it appended. When needed their indexes shift to start at `next`, so on the following resume they
+   * replay after this run's results for the same key.
+   */
+  export function rest(previous: ReadonlyArray<Entry>, counts: ReadonlyMap<string, number>, next: number) {
+    const seen = new Map<string, number>()
+    const items = previous
+      .toSorted((a, b) => a.index - b.index)
+      .filter((item) => {
+        const occurrence = seen.get(item.key) ?? 0
+        seen.set(item.key, occurrence + 1)
+        return occurrence >= (counts.get(item.key) ?? 0)
+      })
+    const shift = Math.max(0, next - (items.at(0)?.index ?? next))
+    return items.map((item) => ({ ...item, index: item.index + shift }))
+  }
+
   /** Append-only writer; appends are serialized so concurrent agents never interleave partial lines. */
   export function writer(file: string) {
     const lock = Semaphore.makeUnsafe(1)
+    // Appends per key and the highest index appended, counted when an append is issued (see restore).
+    const counts = new Map<string, number>()
+    const state = { last: -1 }
+    const count = (item: Entry) => {
+      counts.set(item.key, (counts.get(item.key) ?? 0) + 1)
+      state.last = Math.max(state.last, item.index)
+    }
+    const line = (item: Entry) => JSON.stringify(item) + "\n"
     // A lost journal line only costs a cache miss on resume, so write failures are logged, never raised.
     const guard = (work: () => Promise<unknown>) =>
       lock.withPermits(1)(
@@ -130,9 +157,23 @@ export namespace WorkflowJournal {
         ),
       )
     return {
-      append: (item: Entry) => guard(() => fs.appendFile(file, JSON.stringify(item) + "\n")),
+      append: (item: Entry) => {
+        count(item)
+        return guard(() => fs.appendFile(file, line(item)))
+      },
       /** Start an empty journal (a resumed run rewrites it with the results it serves and produces). */
       reset: () => guard(() => Bun.write(file, "")),
+      /**
+       * Append back the previous journal's entries this run never re-recorded (it stopped early, or diverged
+       * before reaching them), so a later resume still serves them. Safe to call more than once.
+       */
+      restore: (previous: ReadonlyArray<Entry>) =>
+        Effect.suspend(() => {
+          const items = rest(previous, counts, state.last + 1)
+          if (items.length === 0) return Effect.void
+          items.forEach(count)
+          return guard(() => fs.appendFile(file, items.map(line).join("")))
+        }),
     }
   }
 }
