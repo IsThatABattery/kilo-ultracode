@@ -48,6 +48,8 @@ export function resolveEventSessionId(
 
   void lookupMessageSessionId
   if (event.type === "sandbox.status.changed") return event.properties.sessionID
+  // A workflow run belongs to the session that launched it.
+  if (event.type === "workflow.run.updated") return event.properties.run.sessionID
   return resolveTransientSessionId(event)
 }
 

@@ -187,7 +187,7 @@ import { mergeWorktreeDiffs } from "../diff-viewer/diff-state"
 import { DiffScopeControls } from "../diff-viewer/DiffScopeControls"
 import { scopeCapabilities } from "./diff-scope-state"
 import { createDiffReviewScope } from "./diff-review-scope"
-import { dispatchInitialPrompt, seedInitialVariant } from "./initial-message"
+import { dispatchInitialPrompt, seedInitialUltracode, seedInitialVariant } from "./initial-message"
 import { SidebarToggleButton } from "./SidebarToggleButton"
 import { setTabWidths } from "./tab-widths"
 import { clampPanelWidth, createPanelResize, maxPanelWidth, minPanelWidth, SidePanel } from "./side-panel-layout"
@@ -1494,6 +1494,7 @@ const AgentManagerContent: Component = () => {
           session.setSessionModel(ev.sessionId, ev.providerID, ev.modelID)
         }
         seedInitialVariant(session, ev)
+        seedInitialUltracode(session, ev)
 
         // Only send a message if there's text — otherwise just clear busy state
         dispatchInitialPrompt(session, ev)

@@ -11,6 +11,7 @@ import { createMemo, For, Show } from "solid-js"
 import { Dynamic } from "solid-js/web"
 import { BasicTool } from "@kilocode/kilo-ui/basic-tool"
 import { ToolRegistry, type ToolProps } from "@kilocode/kilo-ui/message-part"
+import { registerWorkflowTool } from "./WorkflowToolCard"
 
 /** Tools that should be open by default in the VS Code sidebar. */
 const DEFAULT_OPEN_TOOLS = ["bash"]
@@ -158,6 +159,11 @@ export function registerVscodeToolOverrides() {
       render: BackgroundProcessTool,
     })
     registered.add("background_process")
+  }
+
+  if (!registered.has("workflow")) {
+    registerWorkflowTool()
+    registered.add("workflow")
   }
 
   for (const name of DEFAULT_OPEN_TOOLS) {

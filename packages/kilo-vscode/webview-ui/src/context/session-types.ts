@@ -27,6 +27,7 @@ import type {
 } from "../types/messages"
 import type { Activity } from "../utils/session-activity"
 import type { Timing } from "./session-timing"
+import type { SessionUltracode } from "./session-ultracode"
 import type { MessageMutation } from "./session-utils"
 
 export interface SessionContextValue {
@@ -152,12 +153,14 @@ export interface SessionContextValue {
   mcpBundles: Accessor<McpBundle[]>
   refreshMcpBundles: () => void
   selectedAgent: (sessionID?: string) => string
-  submission: (sessionID?: string) => { model?: ModelSelection; variant?: string; agent?: string }
+  submission: (sessionID?: string) => { model?: ModelSelection; variant?: string; ultracode?: boolean; agent?: string }
   selectAgent: (name: string, sessionID?: string) => void
   getSessionAgent: (sessionID: string) => string
   setSessionModel: (sessionID: string, providerID: string, modelID: string) => void
   setSessionAgent: (sessionID: string, name: string) => void
   setSessionVariant: (sessionID: string, providerID: string, modelID: string, value: string, agent?: string) => void
+  // Ultracode (multi-agent workflow mode) for a session or draft scope
+  ultracode: SessionUltracode
 
   // Thinking variant for the selected model
   variantList: (sessionID?: string) => string[]

@@ -102,6 +102,7 @@ export async function createMultiVersion(
           arguments: msg.arguments,
           agent,
           variant: msg.variant,
+          ultracode: msg.ultracode,
           files,
         },
       ),
@@ -345,6 +346,7 @@ function sendInitialPrompt(
     arguments: string | undefined
     agent: string | undefined
     variant: string | undefined
+    ultracode: boolean | undefined
     files: Extract<AgentManagerInMessage, { type: "agentManager.createMultiVersion" }>["files"]
   },
 ): void {
@@ -368,5 +370,6 @@ function sendInitialPrompt(
       modelID: msg.modelID,
     })
   }
-  host.post({ type: "agentManager.sendInitialMessage", projectId, ...msg })
+  const ultracode = input.ultracode === undefined ? {} : { ultracode: input.ultracode }
+  host.post({ type: "agentManager.sendInitialMessage", projectId, ...msg, ...ultracode })
 }

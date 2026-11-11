@@ -99,6 +99,11 @@ const icons: Record<string, { path: string; viewBox: string }> = {
     viewBox: "0 0 20 20",
     path: `<circle cx="10" cy="10" r="7.5" stroke="currentColor"/><circle cx="10" cy="10" r="4.5" stroke="currentColor"/><circle cx="10" cy="10" r="1.5" fill="currentColor"/>`,
   },
+  pause: {
+    viewBox: "0 0 20 20",
+    // Filled bars, matching the upstream play and stop glyphs.
+    path: `<rect x="5" y="5" width="3.5" height="10" fill="currentColor"/><rect x="11.5" y="5" width="3.5" height="10" fill="currentColor"/>`,
+  },
   clock: {
     viewBox: "0 0 20 20",
     path: `<circle cx="10" cy="10" r="7" stroke="currentColor" stroke-width="1.25"/><path d="M10 5.75V10L13.25 11.75" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"/>`,

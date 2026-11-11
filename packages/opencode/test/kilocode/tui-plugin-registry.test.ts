@@ -15,6 +15,7 @@ const kilo = [
   "internal:kilo-sidebar-pr",
   "internal:kilo-sidebar-usage",
   "internal:sandbox",
+  "internal:kilo-workflows",
   "internal:remote",
   "internal:reload",
 ]

@@ -84,6 +84,7 @@ const WithSessions: ParentComponent<{ sessions?: typeof mockSessions }> = (props
     setSessionModel: noop,
     setSessionAgent: noop,
     setSessionVariant: noop,
+    ultracode: { current: () => false, select: noop, toggle: () => false },
     variantList: () => [],
     currentVariant: () => undefined,
     selectVariant: noop,

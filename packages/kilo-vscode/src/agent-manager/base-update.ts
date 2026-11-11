@@ -107,6 +107,7 @@ export async function handleBaseUpdate(
       questions: "dismiss",
       model: msg.model,
       variant: msg.variant,
+      ultracode: msg.ultracode,
       agent: msg.agent,
     })
   } catch (err) {

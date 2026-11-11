@@ -152,6 +152,9 @@ import type { PRReviewCommentData, ReviewMessageData } from "./shared/review-com
 import { feedbackMetadata, parseFeedback, type BrowserFeedbackData } from "./shared/browser-feedback"
 import { mergeInjected } from "./shared/injected-prompt"
 import { completesWithoutStatus, goalControl } from "./kilo-provider/command-completion"
+import { flag, ultracodeField, type PromptOptions } from "./kilo-provider/prompt-options"
+import { routeWorkflowMessage } from "./kilo-provider/workflow"
+import { workflowAgent } from "./kilo-provider/workflow-run"
 import { KiloProviderMemory } from "./kilo-provider/memory"
 
 import {
@@ -261,6 +264,7 @@ type SendWebviewMessage = {
   modelID?: string
   agent?: string
   variant?: string
+  ultracode?: unknown
   files?: unknown
   review?: unknown
   browserFeedback?: unknown
@@ -1311,6 +1315,14 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
         return
       }
       if (this.handleEditorOpenMessage(message)) return
+      if (
+        await routeWorkflowMessage(message, {
+          client: this.client,
+          dir: (sid) => this.getWorkspaceDirectory(sid),
+          post: (msg) => this.postMessage(msg),
+        })
+      )
+        return
       if (await this.handleMcpMessage(message)) return
       if (await this.handleAgentManagerSettingsMessage(message)) return
       if (await this.handleAutoCleanupMessage(message)) return
@@ -1385,6 +1397,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
             parseMessageFiles(message.files),
             typeof message.agentManagerContext === "string" ? message.agentManagerContext : undefined,
             typeof msg.contextDirectory === "string" ? msg.contextDirectory : undefined,
+            { ultracode: flag(message.ultracode) },
           )
           break
         }
@@ -1698,6 +1711,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
             typeof message.commandArgs === "string" ? message.commandArgs : undefined,
             feedback?.browserFeedback,
             typeof message.injectedTitle === "string" ? message.injectedTitle : undefined,
+            { ultracode: flag(message.ultracode) },
           )
           break
         }
@@ -1792,6 +1806,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       typeof message.contextDirectory === "string" ? message.contextDirectory : undefined,
       feedback?.browserFeedback,
       typeof message.injectedTitle === "string" ? message.injectedTitle : undefined,
+      { ultracode: flag(message.ultracode) },
     )
   }
 
@@ -2071,6 +2086,9 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
           if (!directory && !this.isCurrentProjectSession(sessionId)) return false
 
           if (event.type === "session.created" && this.matchesPendingFollowup(event.properties.info)) {
+            return true
+          }
+          if (event.type === "session.created" && workflowAgent(event.properties.info, (id) => this.tracked(id))) {
             return true
           }
 
@@ -4716,6 +4734,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     contextDirectory?: string,
     browserFeedback?: BrowserFeedbackData,
     injectedTitle?: string,
+    opts: PromptOptions = {},
   ): Promise<void> {
     if (!this.client) {
       this.postMessage({
@@ -4781,6 +4800,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
               model: providerID && modelID ? { providerID, modelID } : undefined,
               agent,
               variant,
+              ...ultracodeField(opts.ultracode),
               editorContext,
               snapshotInitialization: this.opts.snapshotInitialization,
             }),
@@ -4817,6 +4837,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     files?: MessageFile[],
     context?: string,
     contextDirectory?: string,
+    opts: PromptOptions = {},
   ): Promise<void> {
     if (!this.client) {
       this.postMessage({
@@ -4870,6 +4891,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
           model: !control && providerID && modelID ? `${providerID}/${modelID}` : undefined,
           agent: control ? undefined : agent,
           variant: control ? undefined : variant,
+          ...(control ? {} : ultracodeField(opts.ultracode)),
           parts,
           snapshotInitialization: this.opts.snapshotInitialization,
         })
@@ -5576,6 +5598,9 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     if (event.type === "session.created" && this.adoptPendingFollowup(event.properties.info)) {
       return
     }
+    if (event.type === "session.created" && this.adoptWorkflowAgent(event.properties.info)) {
+      return
+    }
 
     const sessionID = this.resolveEventSessionId(event)
 
@@ -6190,6 +6215,24 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       return workspaceFolders[0]!.uri.fsPath
     }
     return process.cwd()
+  }
+
+  private tracked(sessionID: string) {
+    return this.trackedSessionIds.has(sessionID)
+  }
+
+  /** Track a workflow agent session of a tracked session so its permission and question prompts show. */
+  private adoptWorkflowAgent(session: Session) {
+    if (!workflowAgent(session, (id) => this.tracked(id))) return false
+    this.trackedSessionIds.add(session.id)
+    const parent = session.parentID ?? ""
+    const dir = this.sessionDirectories.get(parent)
+    if (dir && !this.sessionDirectories.has(session.id)) this.sessionDirectories.set(session.id, dir)
+    const git = this.sessionGitDirectories.get(parent)
+    if (git && !this.sessionGitDirectories.has(session.id)) this.sessionGitDirectories.set(session.id, git)
+    // sessionUpdated (not sessionCreated) only records the child, so it never becomes the open session.
+    this.postMessage({ type: "sessionUpdated", session: this.sessionToWebview(session) })
+    return true
   }
 
   private trackDirectory(sessionId: string, dir: string) {

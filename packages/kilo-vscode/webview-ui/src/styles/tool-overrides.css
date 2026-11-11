@@ -130,6 +130,49 @@
 }
 
 /* ============================================
+   Workflow Tool (dynamic workflow run progress)
+   ============================================ */
+
+[data-component="task-tools"][data-variant="workflow"] {
+  padding: 6px 0;
+
+  [data-slot="task-tool-item"] {
+    min-height: 20px;
+    padding: 0 12px;
+  }
+
+  [data-slot="task-tool-title"] {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  [data-slot="task-tool-subtitle"] {
+    flex: 0 10 auto;
+  }
+
+  [data-slot="task-tool-item"][data-state="error"] [data-slot="task-tool-subtitle"] {
+    color: var(--text-critical-base, var(--vscode-errorForeground));
+    white-space: normal;
+  }
+
+  [data-workflow-agent][data-clickable="true"] {
+    cursor: pointer;
+
+    &:hover {
+      background: var(--surface-interactive-hover, var(--vscode-list-hoverBackground));
+    }
+  }
+
+  [data-slot="workflow-agent-stop"] {
+    margin-inline-start: auto;
+    flex-shrink: 0;
+  }
+}
+
+/* ============================================
    Background Process Tool
    ============================================ */
 

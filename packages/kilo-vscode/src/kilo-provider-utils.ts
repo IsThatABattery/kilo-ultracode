@@ -4,6 +4,8 @@ import { prettifyError } from "zod/v4"
 import type { CloudSessionMessage, IndexingStatus } from "./services/cli-backend/types"
 import type { PartBatch, PartUpdate } from "./kilo-provider/session-stream-scheduler"
 import type { PartRemove } from "./shared/stream-messages"
+import { toRun } from "./kilo-provider/workflow-run"
+import type { WorkflowRun } from "../webview-ui/src/types/messages/workflow"
 import {
   createSessionPageState,
   mergeSessions,
@@ -206,6 +208,7 @@ export function sessionToWebview(
   session: Pick<Session, "id" | "parentID" | "title" | "time" | "summary" | "revert" | "metadata" | "agent" | "model">,
 ) {
   const goal = session.metadata?.["kilo.goal"]
+  const ultracode = session.metadata?.["kilo.ultracode"]
   return {
     id: session.id,
     parentID: session.parentID ?? null,
@@ -225,6 +228,10 @@ export function sessionToWebview(
     // SolidJS store merge never clears the existing revert state.
     revert: session.revert ?? null,
     summary: session.summary ?? null,
+    // Once set, the toggle is always a boolean, so omitting it never needs to clear a stale value.
+    ...(ultracode && typeof ultracode === "object" && "enabled" in ultracode && typeof ultracode.enabled === "boolean"
+      ? { ultracode: ultracode.enabled }
+      : {}),
     goal:
       goal &&
       typeof goal === "object" &&
@@ -587,6 +594,7 @@ export type WebviewMessage =
       reason?: string
       version: number
     }
+  | { type: "workflowRunUpdated"; run: WorkflowRun }
   | null
 
 type PartEvent =
@@ -780,6 +788,8 @@ export function mapSSEEventToWebviewMessage(event: StreamEvent, sessionID: strin
         type: "indexingStatusLoaded",
         status: event.properties.status,
       }
+    case "workflow.run.updated":
+      return { type: "workflowRunUpdated", run: toRun(event.properties.run) }
     default:
       return null
   }

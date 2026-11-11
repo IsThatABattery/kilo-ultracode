@@ -73,6 +73,11 @@ export interface ExperimentalConfig {
   continue_loop_on_deny?: boolean
   mcp_timeout?: number
   disable_paste_summary?: boolean
+  /** Dynamic workflows (the workflow tool). On unless set to false. */
+  workflows?: boolean
+  /** Default ultracode state for sessions that have not toggled it. */
+  ultracode?: boolean
+  workflow_size?: "small" | "medium" | "large" | "unrestricted"
 }
 
 export interface SandboxConfig {
@@ -201,4 +206,6 @@ export interface FeatureFlags {
   sandboxControls: boolean
   backgroundSubagents: boolean
   speechToText: boolean
+  /** The backend runs dynamic workflows (ultracode toggle, workflow tool card). */
+  workflows: boolean
 }

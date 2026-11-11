@@ -110,6 +110,7 @@ export const ConfigProvider: ParentComponent = (props) => {
     sandboxControls: false,
     backgroundSubagents: false,
     speechToText: false,
+    workflows: false,
   })
   const [loading, setLoading] = createSignal(true)
   const [draft, setDraft] = createSignal<Partial<Config>>({})

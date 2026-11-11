@@ -51,6 +51,8 @@ export interface SessionInfo {
   agent?: string
   /** Model and effort the server last ran this session with; no variant means Default. */
   model?: { providerID: string; modelID: string; variant?: string }
+  /** Stored ultracode toggle (`metadata["kilo.ultracode"].enabled`); absent until a client sets it. */
+  ultracode?: boolean
   goal?: {
     text: string
     active: boolean

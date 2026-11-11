@@ -123,13 +123,18 @@ describe("indexing SSE mapping", () => {
 describe("indexing feature detection", () => {
   it("keeps background subagent capability disabled unless the server reports it", () => {
     expect(configFeatures().backgroundSubagents).toBe(false)
-    expect(configFeatures({}, true).backgroundSubagents).toBe(true)
+    expect(configFeatures({}, { backgroundSubagents: true, workflows: false }).backgroundSubagents).toBe(true)
+  })
+
+  it("keeps workflows and ultracode hidden unless the server reports them", () => {
+    expect(configFeatures().workflows).toBe(false)
+    expect(configFeatures({}, { backgroundSubagents: false, workflows: true }).workflows).toBe(true)
   })
 
   it("disables speech input capture in remote windows", () => {
     expect(configFeatures().speechToText).toBe(true)
-    expect(configFeatures({}, false, true).speechToText).toBe(false)
-    expect(configFeatures({}, false, false).speechToText).toBe(true)
+    expect(configFeatures({}, undefined, true).speechToText).toBe(false)
+    expect(configFeatures({}, undefined, false).speechToText).toBe(true)
   })
 
   it("enables indexing settings when the indexing plugin is present", () => {

@@ -498,6 +498,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       const hidden = new Set<string>()
       if (session.variantList(sid()).length === 0) hidden.add("variant")
       if (!sandboxVisible()) hidden.add("sandbox")
+      if (!features().workflows) hidden.add("ultracode")
       if (props.worktree !== true) hidden.add("review worktree")
       if (!props.onUpdateBase || props.worktree !== true) hidden.add("update-from-base")
       return hidden
@@ -521,6 +522,16 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         hints: [],
         action: () => props.onUpdateBase?.(),
         enabled: () => props.worktree === true && server.isConnected() && !locked() && !props.blocked?.(),
+      },
+      {
+        name: "ultracode",
+        description: language.t("prompt.ultracode.command"),
+        hints: ["workflow", "multi-agent"],
+        action: () => {
+          const next = session.ultracode.toggle(sid())
+          showToast({ title: language.t(next ? "prompt.ultracode.on" : "prompt.ultracode.off") })
+        },
+        enabled: () => features().workflows,
       },
       {
         name: "caffeinate",

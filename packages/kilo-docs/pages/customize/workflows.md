@@ -8,6 +8,10 @@ platform: new
 
 Workflows (also called **slash commands** in the new extension) automate repetitive tasks by defining step-by-step instructions for Kilo Code to execute.
 
+{% callout type="tip" %}
+Looking for scripts that orchestrate many agents at once? See [Dynamic Workflows and Ultracode](/docs/code-with-ai/features/workflows).
+{% /callout %}
+
 {% image src="/docs/img/screenshot-tests/kilo-vscode/visual-regression/settings/agent-behaviour-workflows-chromium-linux.png" alt="Workflows tab in Kilo Code" width="420" caption="Workflows tab in Kilo Code" /%}
 
 ## Creating Workflows

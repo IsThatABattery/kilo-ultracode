@@ -11,6 +11,10 @@ interface VariantSession {
   setSessionVariant: (sessionID: string, providerID: string, modelID: string, value: string, agent?: string) => void
 }
 
+interface UltracodeSession {
+  ultracode: { select: (value: boolean, sessionID?: string) => void }
+}
+
 interface PromptSession {
   sendCommand: (
     command: string,
@@ -44,6 +48,7 @@ export function initialCommand(ev: AgentManagerSendInitialMessage): SendCommandR
     modelID: ev.modelID,
     agent: ev.agent,
     variant: ev.variant,
+    ultracode: ev.ultracode,
     files: ev.files,
   }
 }
@@ -60,6 +65,7 @@ export function initialMessage(ev: AgentManagerSendInitialMessage): SendMessageR
     modelID: ev.modelID,
     agent: ev.agent,
     variant: ev.variant,
+    ultracode: ev.ultracode,
     files: ev.files,
     browserFeedback: ev.browserFeedback,
   }
@@ -105,4 +111,14 @@ export function seedInitialVariant(session: VariantSession, ev: AgentManagerSend
   const state = initialVariant(ev, session.getSessionAgent(ev.sessionId))
   if (!state) return
   session.setSessionVariant(state.sessionID, state.providerID, state.modelID, state.value, state.agent)
+}
+
+/**
+ * Give the new session the dialog's ultracode choice before its first prompt,
+ * so the toggle shows it and a command (which reads the session's choice)
+ * carries it too.
+ */
+export function seedInitialUltracode(session: UltracodeSession, ev: AgentManagerSendInitialMessage) {
+  if (ev.ultracode === undefined) return
+  session.ultracode.select(ev.ultracode, ev.sessionId)
 }

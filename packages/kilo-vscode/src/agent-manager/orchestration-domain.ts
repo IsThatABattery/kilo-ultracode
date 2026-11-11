@@ -6,6 +6,7 @@ import type { LocalStats, WorktreeStats } from "./GitStatsPoller"
 import type { PRStatus } from "./types"
 import type { ManagedSession, Worktree, WorktreeStateManager } from "./WorktreeStateManager"
 import { SNAPSHOT_INITIALIZATION } from "./constants"
+import { ultracodeField } from "../kilo-provider/prompt-options"
 
 export type Activity = "idle" | "busy" | "retry" | "offline"
 export type FilterState = Activity | "waiting"
@@ -402,6 +403,7 @@ export async function prompt(input: {
   questions?: "dismiss"
   model?: { providerID: string; modelID: string }
   variant?: string
+  ultracode?: boolean
   agent?: string
   metadata?: Record<string, unknown>
 }): Promise<void> {
@@ -417,6 +419,7 @@ export async function prompt(input: {
       parts: [{ type: "text", text: input.text, ...(input.metadata ? { metadata: input.metadata } : {}) }],
       model: input.model,
       variant: input.variant,
+      ...ultracodeField(input.ultracode),
       agent: input.agent,
       snapshotInitialization: SNAPSHOT_INITIALIZATION,
     },
