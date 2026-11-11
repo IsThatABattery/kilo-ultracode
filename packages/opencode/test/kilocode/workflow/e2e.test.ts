@@ -241,6 +241,11 @@ describe("dynamic workflow end to end", () => {
             label: item.label,
             phase: item.phase,
           })
+          // Clients open an agent's transcript over HTTP; the schema agent's user message carries a json_schema format.
+          const transcript = yield* call<SessionV1.WithParts[]>(
+            SessionPaths.messages.replace(":sessionID", item.sessionID ?? ""),
+          )
+          expect(transcript.length).toBeGreaterThan(0)
         }
 
         // The schema agent got the StructuredOutput tool without a forced tool choice; no agent can recurse.

@@ -53,6 +53,15 @@ export namespace KiloUltracode {
     yield* sessions.setMetadata({ sessionID, metadata: { ...fresh.metadata, [KEY]: { enabled } } })
   })
 
+  /**
+   * Persist the toggle a prompt or command request carries (`ultracode`), if any. SessionPrompt calls this before
+   * it reads the session, on every prompt and command path (including /goal and resume).
+   */
+  export function persist(sessions: Session.Interface, input: { sessionID: SessionID; ultracode?: boolean }) {
+    if (input.ultracode === undefined) return Effect.void
+    return set(input.sessionID, input.ultracode).pipe(Effect.provideService(Session.Service, sessions), Effect.orDie)
+  }
+
   /** Effective state: workflows must be enabled; the session toggle wins over the `experimental.ultracode` default. */
   export function enabled(session: { metadata?: Record<string, unknown> }, cfg: Settings, flags: Flags) {
     if (!KiloWorkflowEnabled.enabled(cfg, flags)) return false

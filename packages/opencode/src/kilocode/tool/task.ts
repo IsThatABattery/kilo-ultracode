@@ -4,7 +4,7 @@ import type { SessionID } from "@/session/schema"
 import path from "path"
 import { Permission } from "@/permission"
 import { PermissionAllowlist } from "../permission/allowlist"
-import { guarded } from "../agent"
+import { guarded, workflowDir } from "../agent"
 import { Flag } from "@opencode-ai/core/flag/flag"
 import { Global } from "@opencode-ai/core/global"
 import * as Log from "@opencode-ai/core/util/log"
@@ -199,6 +199,9 @@ export namespace KiloTask {
       { permission: "suggest", pattern: "*", action: "deny" },
       // Delegated sessions never start dynamic workflows; only the main session orchestrates.
       { permission: "workflow", pattern: "*", action: "deny" },
+      // Workflow run files (scripts, journals that resumes replay as cached results) belong to the launching
+      // session: this overrides the primary agents' default allow for them.
+      { permission: "external_directory", pattern: workflowDir(), action: "deny" },
       ...rules,
     ]
   }

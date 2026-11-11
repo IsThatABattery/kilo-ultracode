@@ -991,6 +991,9 @@ export const dict = {
   "settings.experimental.ultracode.title": "Ultracode par défaut",
   "settings.experimental.ultracode.description":
     "Démarrer les sessions avec ultracode activé, pour que l'agent planifie un workflow multi-agents pour chaque tâche importante",
+  "settings.experimental.ultracodeKeyword.title": "Mot-clé Ultracode",
+  "settings.experimental.ultracodeKeyword.description":
+    "Le mot ultracode dans un message active un workflow multi-agents pour ce message",
   "settings.experimental.continueOnDeny.title": "Continuer en cas de refus",
   "settings.experimental.continueOnDeny.description":
     "Continuer la boucle de l'agent lorsqu'une autorisation est refusée",

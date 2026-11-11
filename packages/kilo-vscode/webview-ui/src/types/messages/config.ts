@@ -77,6 +77,8 @@ export interface ExperimentalConfig {
   workflows?: boolean
   /** Default ultracode state for sessions that have not toggled it. */
   ultracode?: boolean
+  /** The word ultracode in a typed message opts that message in. On unless set to false. */
+  ultracode_keyword?: boolean
   workflow_size?: "small" | "medium" | "large" | "unrestricted"
 }
 

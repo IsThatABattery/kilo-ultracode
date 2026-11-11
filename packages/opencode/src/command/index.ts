@@ -18,7 +18,6 @@ import { WorkflowSaved } from "@/kilocode/workflow/saved" // kilocode_change
 
 type State = {
   commands: Record<string, Info>
-  saved?: number // kilocode_change - WorkflowSaved.revision() this state was built at
 }
 
 export const Event = {
@@ -180,10 +179,7 @@ const layer = Layer.effect(
       }
 
       // kilocode_change start - apply deferred overrides to their registered source
-      // Saved JS workflows take names no other source claimed; partial overrides below may then target them.
-      const saved = WorkflowSaved.revision()
-      const workflows = { cfg, flags, directories: yield* config.directories(), directory: ctx.directory }
-      for (const item of yield* WorkflowSaved.commands(workflows)) commands[item.name] ??= item
+      yield* WorkflowSaved.register(commands, { config, flags, directory: ctx.directory }) // saved JS workflows
       for (const item of overrides) {
         const skillTarget = skillName(item.name)
         if (skillTarget) {
@@ -210,22 +206,13 @@ const layer = Layer.effect(
 
       return {
         commands,
-        saved, // kilocode_change
       }
     })
 
     const state = yield* InstanceState.make<State>((ctx) => init(ctx))
-    // kilocode_change start - rebuild after a workflow is saved; disposing the instance would stop running workflows
-    const current = Effect.fn("Command.current")(function* () {
-      const s = yield* InstanceState.get(state)
-      if (s.saved === WorkflowSaved.revision()) return s
-      yield* InstanceState.invalidate(state)
-      return yield* InstanceState.get(state)
-    })
-    // kilocode_change end
 
     const get = Effect.fn("Command.get")(function* (name: string) {
-      const s = yield* current() // kilocode_change
+      const s = yield* WorkflowSaved.current(state) // kilocode_change - rebuilt after a workflow is saved
       const exact = s.commands[name] // kilocode_change
       if (exact) return exact // kilocode_change
 
@@ -251,7 +238,7 @@ const layer = Layer.effect(
 
     // kilocode_change start
     const list = Effect.fn("Command.list")(function* () {
-      const s = yield* current()
+      const s = yield* WorkflowSaved.current(state)
       const result = Object.values(s.commands)
       const names = new Set(result.map((item) => item.name))
       for (const item of yield* skill.all()) {

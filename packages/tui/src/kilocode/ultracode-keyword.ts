@@ -15,13 +15,14 @@ export namespace UltracodeKeyword {
   /** Metadata flag under `metadata.kilo` that tells the server's keyword detector to ignore the part. */
   export const DISMISSED = "noUltracode"
 
-  const [enabled, setEnabled] = createSignal(false)
+  const [source, setSource] = createSignal<() => boolean>(() => false)
 
-  /** Whether the server runs dynamic workflows, as the workflows plugin last saw; the keyword is inert otherwise. */
-  export const available = enabled
+  /** Whether the server would honor the keyword, as the workflows plugin reports; the keyword is inert otherwise. */
+  export const available = () => source()()
 
-  export function report(value: boolean) {
-    setEnabled(value)
+  /** A fixed value, or an accessor read reactively (e.g. a capability combined with live config). */
+  export function report(value: boolean | (() => boolean)) {
+    setSource(() => (typeof value === "function" ? value : () => value))
   }
 
   /**

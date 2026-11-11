@@ -3,7 +3,7 @@ import type { KiloClient, Session, WorkflowRunDetail as Detail, WorkflowRunInfo 
 import { serverFeatures } from "../../src/features"
 import { mapSSEEventToWebviewMessage, sessionToWebview } from "../../src/kilo-provider-utils"
 import { routeWorkflowMessage } from "../../src/kilo-provider/workflow"
-import { toDetail, toRun, workflowAgent } from "../../src/kilo-provider/workflow-run"
+import { runningAgents, toDetail, toRun, workflowAgent } from "../../src/kilo-provider/workflow-run"
 import { flag, ultracodeField } from "../../src/kilo-provider/prompt-options"
 import { resolveEventSessionId } from "../../src/services/cli-backend/connection-utils"
 import type { SSEPayload } from "../../src/services/cli-backend/sdk-sse-adapter"
@@ -25,7 +25,7 @@ const info: Info = {
   tools: 7,
   size: "medium",
   started: 1000,
-  ended: "NaN",
+  ended: Number.NaN,
   dir: "/data/workflow/ses_parent/wf_1234abcd-abc",
   script: "/data/workflow/ses_parent/wf_1234abcd-abc/script.js",
 }
@@ -115,6 +115,50 @@ describe("workflow run shapes", () => {
     expect(workflowAgent({ parentID: "ses_parent" }, tracked)).toBe(false)
     expect(workflowAgent({ parentID: "ses_other", metadata: { "kilo.workflow": {} } }, tracked)).toBe(false)
     expect(workflowAgent({ metadata: { "kilo.workflow": {} } }, tracked)).toBe(false)
+  })
+})
+
+describe("running workflow agents", () => {
+  function backend(calls: string[], broken?: string) {
+    const runs = [
+      { ...info, id: "wf_live", status: "running" },
+      { ...info, id: "wf_held", status: "paused" },
+      { ...info, id: "wf_old", status: "completed" },
+    ]
+    return {
+      workflow: {
+        list: async () => ({ data: runs }),
+        get: async (params: { runID: string }) => {
+          calls.push(`get ${params.runID}`)
+          if (params.runID === broken) throw new Error("gone")
+          const agent = { ...detail.list[0]!, sessionID: `ses_${params.runID}` }
+          return {
+            data: { ...detail, id: params.runID, list: [agent, { ...agent, id: "a2", sessionID: "ses_known" }] },
+          }
+        },
+      },
+      session: {
+        get: async (params: { sessionID: string }) => {
+          calls.push(`session ${params.sessionID}`)
+          return { data: { ...session(), id: params.sessionID, parentID: "ses_parent" } }
+        },
+      },
+    } as unknown as KiloClient
+  }
+
+  it("loads the running agents of running and paused runs, skipping ones already adopted", async () => {
+    const calls: string[] = []
+    const found = await runningAgents(backend(calls), "ses_parent", "/repo", (id) => id === "ses_known")
+    expect(calls).toEqual(["get wf_live", "get wf_held", "session ses_wf_live", "session ses_wf_held"])
+    expect(found.complete).toBe(true)
+    expect(found.sessions.map((item) => item.id)).toEqual(["ses_wf_live", "ses_wf_held"])
+  })
+
+  it("keeps the agents it found when one run fails to load, and reports the check incomplete", async () => {
+    const calls: string[] = []
+    const found = await runningAgents(backend(calls, "wf_held"), "ses_parent", "/repo", () => false)
+    expect(found.complete).toBe(false)
+    expect(found.sessions.map((item) => item.id)).toEqual(["ses_wf_live", "ses_known"])
   })
 })
 

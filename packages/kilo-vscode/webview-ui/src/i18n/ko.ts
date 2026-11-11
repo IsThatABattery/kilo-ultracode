@@ -959,6 +959,9 @@ export const dict = {
   "settings.experimental.ultracode.title": "기본으로 Ultracode 사용",
   "settings.experimental.ultracode.description":
     "ultracode를 켠 상태로 세션을 시작하여 에이전트가 중요한 작업마다 멀티 에이전트 워크플로를 계획하게 합니다",
+  "settings.experimental.ultracodeKeyword.title": "Ultracode 키워드 트리거",
+  "settings.experimental.ultracodeKeyword.description":
+    "메시지에 ultracode라는 단어가 있으면 해당 메시지에 멀티 에이전트 워크플로를 사용합니다",
   "settings.experimental.continueOnDeny.title": "거부 시 계속",
   "settings.experimental.continueOnDeny.description": "권한이 거부되면 에이전트 루프 계속",
   "settings.sandboxing.title": "샌드박스",

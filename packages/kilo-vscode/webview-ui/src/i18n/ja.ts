@@ -964,6 +964,9 @@ export const dict = {
   "settings.experimental.ultracode.title": "既定で Ultracode",
   "settings.experimental.ultracode.description":
     "ultracode をオンにしてセッションを開始し、実質的なタスクごとにエージェントがマルチエージェントのワークフローを計画するようにします",
+  "settings.experimental.ultracodeKeyword.title": "Ultracode キーワード",
+  "settings.experimental.ultracodeKeyword.description":
+    "メッセージに ultracode という単語を含めると、そのメッセージでマルチエージェントのワークフローを使います",
   "settings.experimental.continueOnDeny.title": "拒否時に続行",
   "settings.experimental.continueOnDeny.description": "権限が拒否された場合にエージェントループを続行",
   "settings.sandboxing.title": "サンドボックス化",

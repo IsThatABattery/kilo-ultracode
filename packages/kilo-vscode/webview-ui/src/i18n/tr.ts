@@ -960,6 +960,9 @@ export const dict = {
   "settings.experimental.ultracode.title": "Varsayılan olarak Ultracode",
   "settings.experimental.ultracode.description":
     "Oturumları ultracode açık başlat, böylece ajan her kapsamlı görev için çok ajanlı bir iş akışı planlar",
+  "settings.experimental.ultracodeKeyword.title": "Ultracode Anahtar Kelimesi",
+  "settings.experimental.ultracodeKeyword.description":
+    "Bir mesajdaki ultracode kelimesi o mesaj için çok ajanlı bir iş akışını etkinleştirir",
   "settings.experimental.continueOnDeny.title": "Reddetme Durumunda Devam Et",
   "settings.experimental.continueOnDeny.description": "Bir izin reddedildiğinde ajan döngüsüne devam et",
   "settings.sandboxing.title": "Sandbox",

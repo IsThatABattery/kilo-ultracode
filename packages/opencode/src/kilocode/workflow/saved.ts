@@ -5,6 +5,9 @@ import { Effect } from "effect"
 import { Flag } from "@opencode-ai/core/flag/flag"
 import { Global } from "@opencode-ai/core/global"
 import * as Log from "@opencode-ai/core/util/log"
+import type { Command } from "@/command"
+import type { Config } from "@/config/config"
+import { InstanceState } from "@/effect/instance-state"
 import type { Meta } from "./types"
 import { WorkflowMeta } from "./meta"
 import { KiloWorkflowEnabled } from "./enabled"
@@ -223,4 +226,41 @@ export namespace WorkflowSaved {
         hints: ["$ARGUMENTS"],
       }))
   })
+
+  /** Revision each command map was built at; keyed by the map, so the Command state keeps upstream's shape. */
+  const built = new WeakMap<object, number>()
+
+  /**
+   * Register saved workflows in a Command state's map, under names no other source claimed (partial command
+   * overrides applied afterwards may still target them), and stamp the map with the revision it was read at.
+   */
+  export const register = Effect.fn("WorkflowSaved.register")(function* (
+    map: Record<string, Command.Info>,
+    input: {
+      config: Pick<Config.Interface, "get" | "directories">
+      flags: Parameters<typeof KiloWorkflowEnabled.enabled>[1]
+      directory: string
+    },
+  ) {
+    const rev = revision()
+    const cfg = yield* input.config.get()
+    const directories = yield* input.config.directories()
+    for (const item of yield* commands({ cfg, flags: input.flags, directories, directory: input.directory })) {
+      map[item.name] ??= item
+    }
+    built.set(map, rev)
+  })
+
+  /**
+   * The instance's Command state, rebuilt when a workflow was saved after `register` stamped it. Only this state is
+   * rebuilt: disposing the instance instead would stop its running workflows.
+   */
+  export function current<A extends { commands: object }, E, R>(state: InstanceState.InstanceState<A, E, R>) {
+    return Effect.gen(function* () {
+      const value = yield* InstanceState.get(state)
+      if (built.get(value.commands) === revision()) return value
+      yield* InstanceState.invalidate(state)
+      return yield* InstanceState.get(state)
+    })
+  }
 }

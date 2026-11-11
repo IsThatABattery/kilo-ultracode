@@ -39549,6 +39549,9 @@
               "ultracode": {
                 "type": "boolean"
               },
+              "ultracode_keyword": {
+                "type": "boolean"
+              },
               "workflow_size": {
                 "type": "string",
                 "enum": ["small", "medium", "large", "unrestricted"]
@@ -47778,39 +47781,6 @@
         },
         "required": ["_tag", "providerID", "message"],
         "additionalProperties": false
-      },
-      "OutputFormat1": {
-        "anyOf": [
-          {
-            "type": "object",
-            "properties": {
-              "type": {
-                "type": "string",
-                "enum": ["text"]
-              }
-            },
-            "required": ["type"],
-            "additionalProperties": false
-          },
-          {
-            "type": "object",
-            "properties": {
-              "type": {
-                "type": "string",
-                "enum": ["json_schema"]
-              },
-              "schema": {
-                "$ref": "#/components/schemas/JSONSchema"
-              },
-              "retryCount": {
-                "type": "integer",
-                "minimum": 0
-              }
-            },
-            "required": ["type", "schema"],
-            "additionalProperties": false
-          }
-        ]
       },
       "session.status": {
         "type": "object",

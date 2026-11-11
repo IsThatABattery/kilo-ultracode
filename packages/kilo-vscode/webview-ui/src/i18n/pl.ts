@@ -928,6 +928,9 @@ export const dict = {
   "settings.experimental.ultracode.title": "Ultracode domyślnie",
   "settings.experimental.ultracode.description":
     "Rozpoczynaj sesje z włączonym ultracode, aby agent planował wieloagentowy przepływ pracy dla każdego istotnego zadania",
+  "settings.experimental.ultracodeKeyword.title": "Słowo kluczowe Ultracode",
+  "settings.experimental.ultracodeKeyword.description":
+    "Słowo ultracode w wiadomości włącza wieloagentowy przepływ pracy dla tej wiadomości",
   "settings.experimental.continueOnDeny.title": "Kontynuuj przy odmowie",
   "settings.experimental.continueOnDeny.description": "Kontynuuj pętlę agenta po odmowie uprawnienia",
   "settings.sandboxing.title": "Izolacja w piaskownicy",

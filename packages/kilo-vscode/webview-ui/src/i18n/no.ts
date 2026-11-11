@@ -931,6 +931,9 @@ export const dict = {
   "settings.experimental.ultracode.title": "Ultracode som standard",
   "settings.experimental.ultracode.description":
     "Start økter med ultracode på, slik at agenten planlegger en arbeidsflyt med flere agenter for hver større oppgave",
+  "settings.experimental.ultracodeKeyword.title": "Ultracode-nøkkelord",
+  "settings.experimental.ultracodeKeyword.description":
+    "La ordet ultracode i en melding slå på en arbeidsflyt med flere agenter for den meldingen",
   "settings.experimental.continueOnDeny.title": "Fortsett ved avvisning",
   "settings.experimental.continueOnDeny.description": "Fortsett agentløkken når en tillatelse avvises",
   "settings.sandboxing.title": "Kjøring i sandkasse",

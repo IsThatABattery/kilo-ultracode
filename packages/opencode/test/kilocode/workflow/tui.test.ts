@@ -396,6 +396,21 @@ describe("workflows TUI plugin", () => {
     expect(UltracodeKeyword.available()).toBe(false)
   })
 
+  test("keeps the prompt keyword inert while experimental.ultracode_keyword is off", async () => {
+    const ctx = await mount({ workflows: true })
+    const experimental = ctx.api.state.config.experimental
+    if (!experimental) throw new Error("the mounted config has no experimental block")
+    expect(UltracodeKeyword.available()).toBe(true)
+    experimental.ultracode_keyword = false
+    expect(UltracodeKeyword.available()).toBe(false)
+    experimental.ultracode_keyword = true
+    expect(UltracodeKeyword.available()).toBe(true)
+    ctx.dispose()
+    const off = await mount({ workflows: false })
+    expect(UltracodeKeyword.available()).toBe(false)
+    off.dispose()
+  })
+
   test("listens for event stream reconnects from an always-mounted app slot", async () => {
     // Reconnect itself is exercised against a real SDK provider in packages/tui/test/kilocode/workflow-reconnect.test.tsx
     // (another test here mocks @tui/context/sdk for the whole process).

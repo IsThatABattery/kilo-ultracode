@@ -249,6 +249,19 @@ const ExperimentalTab: Component = () => {
               {language.t("settings.experimental.ultracode.title")}
             </Switch>
           </SettingsRow>
+
+          <SettingsRow
+            title={language.t("settings.experimental.ultracodeKeyword.title")}
+            description={language.t("settings.experimental.ultracodeKeyword.description")}
+          >
+            <Switch
+              checked={experimental().ultracode_keyword ?? true}
+              onChange={(checked) => updateExperimental("ultracode_keyword", checked)}
+              hideLabel
+            >
+              {language.t("settings.experimental.ultracodeKeyword.title")}
+            </Switch>
+          </SettingsRow>
         </Show>
 
         <SettingsRow

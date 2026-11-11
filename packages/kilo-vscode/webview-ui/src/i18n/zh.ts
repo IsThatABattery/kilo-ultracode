@@ -925,6 +925,8 @@ export const dict = {
   "settings.experimental.workflows.description": "允许智能体运行在后台协调多个子智能体的工作流脚本",
   "settings.experimental.ultracode.title": "默认开启 Ultracode",
   "settings.experimental.ultracode.description": "会话启动时开启 ultracode，让智能体为每个实质性任务规划多智能体工作流",
+  "settings.experimental.ultracodeKeyword.title": "Ultracode 关键词触发",
+  "settings.experimental.ultracodeKeyword.description": "消息中出现 ultracode 一词时，为该消息启用多智能体工作流",
   "settings.experimental.continueOnDeny.title": "拒绝后继续",
   "settings.experimental.continueOnDeny.description": "权限被拒绝时继续智能体循环",
   "settings.sandboxing.title": "沙盒",

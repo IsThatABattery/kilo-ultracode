@@ -201,7 +201,9 @@ export const layer = Layer.effect(
         cancel: (sessionID: SessionID) => cancel(sessionID),
         resolvePromptParts: (template: string) => resolvePromptParts(template),
         prompt: GoalPolicy.bind(sessionID, (input) => prompt(input).pipe(Effect.catch(Effect.die))),
-      } satisfies TaskPromptOps
+        // Not bound to an active goal: workflow agents' routine retries and stops are not the goal's own work.
+        raw: (input) => prompt(input).pipe(Effect.catch(Effect.die)),
+      } satisfies TaskPromptOps & { raw: TaskPromptOps["prompt"] }
     })
     // kilocode_change end
 
@@ -1454,14 +1456,7 @@ export const layer = Layer.effect(
         const human = input.parts.some((part) => part.type !== "text" || !part.synthetic)
         const ticket = prior ?? (yield* control.begin(input.sessionID, input.noReply !== true && human))
         // kilocode_change end
-        // kilocode_change start - persist the session-level ultracode toggle before the session is read
-        if (input.ultracode !== undefined) {
-          yield* KiloUltracode.set(input.sessionID, input.ultracode).pipe(
-            Effect.provideService(Session.Service, sessions),
-            Effect.orDie,
-          )
-        }
-        // kilocode_change end
+        yield* KiloUltracode.persist(sessions, input) // kilocode_change - persist the ultracode toggle first
         const session = yield* sessions.get(input.sessionID).pipe(Effect.orDie)
         yield* revert.cleanup(session)
         // kilocode_change start - recover interrupted Kilo turns before accepting a follow-up
@@ -2339,14 +2334,7 @@ export const layer = Layer.effect(
     // kilocode_change end
 
     const command = Effect.fn("SessionPrompt.command")(function* (input: CommandInput) {
-      // kilocode_change start - persist the ultracode toggle for every command path, including /goal and resume
-      if (input.ultracode !== undefined) {
-        yield* KiloUltracode.set(input.sessionID, input.ultracode).pipe(
-          Effect.provideService(Session.Service, sessions),
-          Effect.orDie,
-        )
-      }
-      // kilocode_change end
+      yield* KiloUltracode.persist(sessions, input) // kilocode_change - every command path, including /goal and resume
       if (input.command === "goal") return yield* goals.command(input) // kilocode_change
       const ticket = yield* control.begin(input.sessionID, false) // kilocode_change
       yield* Effect.logInfo("command", {

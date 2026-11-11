@@ -410,7 +410,8 @@ export function prepare(cfg: Config.Info, flags: Pick<RuntimeFlags.Info, "experi
     // Launching a dynamic workflow fans out many agents, so it asks unless the user allows it.
     workflow: "ask",
     // Workflow runs persist their script, journal and output under the data dir; the launching
-    // agent reads and edits those files to iterate on and resume a run.
+    // agent reads and edits those files to iterate on and resume a run. Delegated sessions (task
+    // subagents, workflow agents) deny them through KiloTask.permissions.
     external_directory: { [workflowDir()]: "allow" },
   })
   return { mcpRules, defaultsPatch, board: enabled }

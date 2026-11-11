@@ -154,7 +154,7 @@ import { mergeInjected } from "./shared/injected-prompt"
 import { completesWithoutStatus, goalControl } from "./kilo-provider/command-completion"
 import { flag, ultracodeField, type PromptOptions } from "./kilo-provider/prompt-options"
 import { routeWorkflowMessage } from "./kilo-provider/workflow"
-import { workflowAgent, workflowBackground } from "./kilo-provider/workflow-run"
+import { runningAgents, workflowAgent, workflowBackground } from "./kilo-provider/workflow-run"
 import { KiloProviderMemory } from "./kilo-provider/memory"
 
 import {
@@ -519,6 +519,10 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
   private readonly isolated = new Map<string, { dir: string; home: string }>()
   // Workflow agent sessions this panel tracks for their prompts; their transcripts stream only while shown.
   private readonly workflowAgents = new Set<string>()
+  // Sessions whose workflow runs were checked for running agents on this connection.
+  private readonly scanned = new Set<string>()
+  // Whether the backend runs dynamic workflows, until the config reports it; asked once per connection.
+  private capability: Promise<boolean> | undefined
   private sessionGitDirectories = new Map<string, string>() // Stable Git root resolved for each session.
   private sessionGitRecoveries = new Set<string>() // Sessions whose older history was scanned for a Git root.
   private readonly aborts = new SessionAbort()
@@ -1190,6 +1194,9 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     while (this.promptRecoveryQueued && this.isWebviewReady) {
       if (!this.client) return
       this.promptRecoveryQueued = false
+      await this.adoptRunningAgents().catch((err: unknown) =>
+        console.error("[Kilo New] KiloProvider: Failed to adopt running workflow agents:", err),
+      )
       await Promise.all([
         fetchAndSendPendingPermissions(this.permissionCtx),
         fetchAndSendPendingQuestions(this.questionCtx),
@@ -2131,6 +2138,9 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
         if (this.connectionState !== state) {
           this.connectionGeneration++
           this.configBindings.clear()
+          // Agents started while disconnected were never seen: check the runs again once connected.
+          this.scanned.clear()
+          this.capability = undefined
         }
         this.connectionState = state
         this.postConnectionState(error)
@@ -6291,6 +6301,41 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     return true
   }
 
+  /** Whether the backend runs dynamic workflows: the loaded config's features, else the server's capabilities. */
+  private workflows(client: KiloClient) {
+    const known = (this.cachedConfigMessage as { features?: { workflows?: unknown } } | null)?.features?.workflows
+    if (typeof known === "boolean") return Promise.resolve(known)
+    this.capability ??= serverFeatures(client, this.getWorkspaceDirectory()).then((caps) => caps.workflows)
+    return this.capability
+  }
+
+  /**
+   * Adopt the agents already running in tracked sessions' workflow runs, before prompt recovery looks for
+   * their pending prompts. Live adoption only sees an agent's session.created, which a panel that opens,
+   * reloads or reconnects mid-run (or a session opened mid-run) missed. Each session is checked once per
+   * connection; agents started later still arrive through session.created. Agents and task children
+   * launch no workflows, so they are skipped.
+   */
+  private async adoptRunningAgents() {
+    const client = this.client
+    if (!client) return
+    for (const id of this.scanned) if (!this.trackedSessionIds.has(id)) this.scanned.delete(id)
+    const ids = [...this.trackedSessionIds].filter(
+      (id) => !this.scanned.has(id) && !this.workflowAgents.has(id) && !this.syncedChildSessions.has(id),
+    )
+    if (ids.length === 0 || !(await this.workflows(client))) return
+    await Promise.all(
+      ids.map(async (id) => {
+        this.scanned.add(id)
+        const found = await runningAgents(client, id, this.getWorkspaceDirectory(id), (sid) =>
+          this.workflowAgents.has(sid),
+        )
+        if (!found.complete) this.scanned.delete(id)
+        for (const session of found.sessions) this.adoptWorkflowAgent(session)
+      }),
+    )
+  }
+
   private trackDirectory(sessionId: string, dir: string) {
     // Agent Manager Local sessions must retain their explicit project root.
     // Removing same-root entries would silently retarget them after switching
@@ -6476,6 +6521,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     this.owners.clear()
     this.isolated.clear()
     this.workflowAgents.clear()
+    this.scanned.clear()
     this.anacondaDesktop.dispose()
     this.aborts.clear()
     this.requests.clear()

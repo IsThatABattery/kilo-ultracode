@@ -2794,6 +2794,7 @@ export type Config = {
     openTelemetry?: boolean
     workflows?: boolean
     ultracode?: boolean
+    ultracode_keyword?: boolean
     workflow_size?: "small" | "medium" | "large" | "unrestricted"
     primary_tools?: Array<string>
     continue_loop_on_deny?: boolean
@@ -5460,16 +5461,6 @@ export type ProviderNotFoundError = {
   providerID: string
   message: string
 }
-
-export type OutputFormat1 =
-  | {
-      type: "text"
-    }
-  | {
-      type: "json_schema"
-      schema: JsonSchema
-      retryCount?: number
-    }
 
 export type SessionStatus2 = {
   id: string

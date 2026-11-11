@@ -885,6 +885,8 @@ export const dict = {
   "settings.experimental.ultracode.title": "預設開啟 Ultracode",
   "settings.experimental.ultracode.description":
     "工作階段啟動時開啟 ultracode，讓代理為每個實質性任務規劃多代理工作流程",
+  "settings.experimental.ultracodeKeyword.title": "Ultracode 關鍵字觸發",
+  "settings.experimental.ultracodeKeyword.description": "訊息中出現 ultracode 一詞時，為該訊息啟用多代理工作流程",
   "settings.experimental.continueOnDeny.title": "拒絕後繼續",
   "settings.experimental.continueOnDeny.description": "權限被拒絕時繼續 Agent 迴圈",
   "settings.sandboxing.title": "沙盒",

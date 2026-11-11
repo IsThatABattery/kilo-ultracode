@@ -50,7 +50,11 @@ Otherwise, the agent works as usual. When a task looks like a good fit, it may d
 Review the uncommitted changes for bugs and security issues, ultracode
 ```
 
-Before a workflow starts, Kilo asks for the `workflow` permission, matched by the workflow's name. Approve it once, or choose to always allow that workflow. `kilo run` rejects permission prompts unless you pass `--auto`, so allow the permission in config for workflows you trust (see [Configuration](#configuration)).
+Before a workflow starts, Kilo asks for the `workflow` permission. The prompt shows the workflow's name, description, and phases. In the CLI, press `v` to view a script the agent wrote, and a script file or saved workflow shows its path.
+
+**Allow always** is offered only when the agent runs a [saved workflow](#saved-workflows) by name, and it covers that workflow in the current project only. A script the agent writes for the task asks every time, unless your [config](#configuration) allows it.
+
+`kilo run` rejects permission prompts unless you pass `--auto`, so allow the permission in config for workflows you trust. With `--auto`, `kilo run` also approves the permission prompts of workflow agents, including agents that run in their own worktree.
 
 The read-only [Ask and Plan agents](/docs/code-with-ai/agents/using-agents) cannot start workflows.
 
@@ -96,6 +100,8 @@ The ultracode switch and `/ultracode` are hidden when dynamic workflows are turn
 
 Typing the word `ultracode` anywhere in a message opts in for that message only, without changing the session switch. Only text you type counts: slash commands such as `/ultracode`, command templates, and text Kilo adds to the conversation do not. Neither does a prompt passed to `kilo run` or a GitHub comment that the Kilo GitHub action relays.
 
+In the CLI, the keyword is highlighted in the prompt. To send the message without opting in, press `Alt+W` (`Option+W` on macOS), or `Backspace` right after the keyword. The highlight goes away and the keyword no longer counts for that message.
+
 To stop the keyword from opting in at all, set `experimental.ultracode_keyword` to `false`. The ultracode switch and `/ultracode` keep working.
 
 ## Watching and controlling runs
@@ -103,25 +109,29 @@ To stop the keyword from opting in at all, set `experimental.ultracode_keyword` 
 {% tabs %}
 {% tab label="VS Code" %}
 
-The workflow card in the chat shows the workflow's name and description with live progress: status, each phase with its completed and total agent counts, running agents, and tokens. Expand the card for details.
+The workflow card in the chat shows the workflow's name and description with live progress: status, completed and total agents, and tokens. Expand the card to see each phase with its completed, running, and failed agents, and the list of agents.
 
-- **Stop** stops the whole run
+- **Stop** on the card stops the whole run. **Stop** on a running agent stops only that agent
 - **Pause** and **Resume** hold and release new agents
 - Select an agent to open its session and read its transcript
+
+Type `/workflows` to scroll to the session's latest workflow card and expand it.
 
 {% /tab %}
 {% tab label="CLI" %}
 
 Type `/workflows` to open the run list for the current session. Each row shows the run's status, name, elapsed time, completed and total agents, and tokens. When the session has only one run, the dialog opens it directly.
 
-A run's view lists its phases and, for the selected phase, its agents with their status, model, tokens, and elapsed time. Select an agent to open its session and read its transcript. From the dialog you can stop the run or a single agent, pause or resume the run, and save its script as a [saved workflow](#saved-workflows). The available keys are listed at the bottom of the dialog.
+A run's view lists its phases. Open a phase to see its agents with their status, model, tokens, and elapsed time, and select an agent to open its session and read its transcript. From the dialog you can stop the run or a single agent, pause or resume the run, and save its script as a [saved workflow](#saved-workflows). The available keys are listed at the bottom of the dialog.
 
-The session sidebar has a **Workflows** section with one line per running or paused run. Select it to open the dialog.
+The session sidebar has a **Workflows** section with one line per running or paused run. Select a line to open that run.
 
-In the chat, the workflow tool call shows the workflow's name, description, status, and agent progress instead of the script.
+In the chat, the workflow tool call shows the workflow's name, description, status, agent progress, and phases instead of the script.
 
 {% /tab %}
 {% /tabs %}
+
+A running or paused run shows a **Large workflow** warning when it has more agents than the [size guideline](#controlling-cost) you set (25 when you have not set one or chose `unrestricted`), or is on track to use more than 1.5 million tokens. The warning never appears while ultracode is on, because ultracode asks for large runs.
 
 How the controls behave:
 
@@ -226,7 +236,7 @@ The `meta` block must be a plain literal with a `name` and a one-line `descripti
 | `pipeline(items, ...stages)` | Runs each item through the stages independently, with no waiting between stages. A stage that throws turns that item into `null` |
 | `parallel(thunks)` | Runs functions concurrently and waits for all of them. A function that throws resolves to `null` |
 | `phase(title)` | Groups the agents that follow under a phase in the progress view |
-| `log(message)` | Shows a progress message in the progress view |
+| `log(message)` | Shows a progress message in the progress view. `console.log()` does the same |
 | `args` | The input passed to the workflow, such as the text after a saved workflow's slash command |
 | `budget` | The turn's token target: `budget.total`, `budget.spent()`, and `budget.remaining()` |
 | `workflow(nameOrRef, args)` | Runs a saved workflow or `{ scriptPath }` as a step. Nesting is limited to one level |
@@ -247,7 +257,7 @@ Scripts run in a sandbox:
 - There is no file system, network, or process access. Agents do the work; the script coordinates them
 - `Date.now()`, `Math.random()`, and `new Date()` without arguments throw, because they would break [resume](#resuming-a-run). Pass timestamps in through `args`
 
-Workflow agents use the tools their agent allows, including MCP tools connected to the session, and follow your permission rules and `AGENTS.md` instructions. They cannot ask you questions, start subagents, or start workflows of their own.
+Workflow agents use the tools their agent allows, including MCP tools connected to the session, and follow your permission rules and `AGENTS.md` instructions. They cannot ask you questions, start subagents, start workflows of their own, or read the [run files](#resuming-a-run).
 
 ### Worktree isolation
 
@@ -258,7 +268,7 @@ With `isolation: "worktree"`, an agent runs in a fresh git worktree so parallel 
 Workflows do not depend on a specific provider:
 
 - **Model**: agents pick a model the same way as `task` subagents: the agent type's configured model, then [`subagent_model`](/docs/code-with-ai/agents/model-selection) if set, otherwise the model and reasoning variant of the turn that launched the workflow. If an agent's `model` option cannot be resolved, it falls back to that default and the run's log shows a warning
-- **Effort**: `effort` maps to the closest reasoning variant the agent's model offers, and is ignored for models without variants
+- **Effort**: `effort` maps to the agent model's reasoning variant of the same name, otherwise to the highest variant below it, and is ignored for models without variants. Without `effort`, an agent gets the reasoning variant a `task` subagent would get, usually that of the turn that launched the workflow
 - **Structured results**: an agent with a `schema` returns its answer by calling a `StructuredOutput` tool. Kilo validates the answer against the schema and, if it is missing or invalid, sends the validation error back and asks again, up to 5 attempts in total. If every attempt fails, the `agent()` call throws. Schemas use JSON Schema draft-07 unless they declare draft 2019-09 or 2020-12 with `$schema`
 
 The cost of workflow agents is added to the session's cost.
@@ -274,7 +284,11 @@ Each run is saved in Kilo's data directory, under `~/.local/share/kilo/workflow/
 | `run.json` | Run details, including each agent's session ID |
 | `output.json` | The summary, logs, and final result |
 
-To fix a script or retry after a stop or failure, ask the agent to edit the run's `script.js` and resume the run. Agents whose prompt and options did not change return their journaled results instantly, and changing only an agent's `label` or `phase` keeps its cached result. From the first agent that is new, changed, or did not complete in the earlier run, everything runs live.
+Only the main conversation can read and edit these files. Subagents and workflow agents cannot.
+
+Runs stay on disk, so the progress views still list a session's runs after Kilo restarts. A run that was still running when its Kilo process exited shows as stopped.
+
+To fix a script or retry after a stop or failure, ask the agent to edit the run's `script.js` and resume the run. Agents whose prompt and options did not change return their journaled results instantly, and changing only an agent's `label` or `phase` keeps its cached result. From the first agent that is new, changed, or failed in the earlier run, every later agent runs live. Agents that were still running when you stopped the run start over, and later unchanged agents still return their cached results.
 
 You can resume only runs from the same session, and only after the run has ended. Stop a running or paused run first.
 
@@ -287,6 +301,7 @@ You can resume only runs from the same session, and only after the run has ended
 | Items per `parallel()` or `pipeline()` call | 4096 |
 | Nested workflows | One level |
 | Structured result attempts per agent | 5 |
+| Script that stops responding, such as a busy loop | Stopped after 60 seconds |
 
 ## Controlling cost
 
@@ -305,7 +320,7 @@ Set these keys in `kilo.jsonc`:
 | `experimental.ultracode` | `false` | Start every session with ultracode on |
 | `experimental.ultracode_keyword` | `true` | Set to `false` so the word `ultracode` in a message no longer opts in to a workflow |
 | `experimental.workflow_size` | `"medium"` | Size guideline: `small` (fewer than 5 agents), `medium` (fewer than 10), `large` (fewer than 50), or `unrestricted` (no guideline) |
-| `permission.workflow` | `"ask"` | Whether starting a workflow asks for approval, runs without asking, or is blocked. Accepts workflow names as patterns |
+| `permission.workflow` | `"ask"` | Whether starting a workflow asks for approval, runs without asking, or is blocked. See [Permission patterns](#permission-patterns) |
 
 ```jsonc
 {
@@ -316,11 +331,13 @@ Set these keys in `kilo.jsonc`:
   "permission": {
     "workflow": {
       "*": "ask",
-      "review-changes": "allow"
+      "review-changes@*": "allow"
     }
   }
 }
 ```
+
+In VS Code, the `experimental` switches are also under **Settings** > **Experimental**, and the `workflow` permission under **Settings** > **Auto-Approve**.
 
 These environment variables tune workflows for one process:
 
@@ -330,6 +347,18 @@ These environment variables tune workflows for one process:
 | `KILO_WORKFLOW_MAX_CONCURRENT_AGENTS` | Concurrent agents per run, from 1 to 256 |
 | `KILO_WORKFLOW_PREFIX_STAGGER_MS` | How long an agent waits for a sibling with the same model and options to start responding, so the provider can reuse its prompt cache. Defaults to 5000. Set to `0` to turn it off |
 | `KILO_MAX_STRUCTURED_OUTPUT_RETRIES` | Total attempts for a structured result per agent. Defaults to 5 |
+| `KILO_WORKFLOW_MAX_RSS_MB` | Memory ceiling in MB for the Kilo process while a workflow script runs. Scripts run inside the Kilo process, and a run that pushes it past the ceiling is stopped. Defaults to half of the machine's or container's memory |
+
+### Permission patterns
+
+Each `workflow` permission request carries one pattern:
+
+| Launch | Pattern |
+|---|---|
+| A saved workflow the agent runs by name, including through its slash command | `<name>@<project path>`, such as `review-changes@/home/me/app` |
+| A script the agent wrote, or a script file | `script:<name>` |
+
+The project path is the root of the git repository, or the working directory outside one. **Allow always** saves the saved workflow's exact pattern, so the approval applies only in that project. In config, `"review-changes@*": "allow"` allows the saved workflow in every project, a plain `"review-changes"` rule matches nothing, and `"workflow": "allow"` allows every workflow.
 
 ## Related
 

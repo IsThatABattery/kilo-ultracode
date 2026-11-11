@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "bun:test"
 import * as vscode from "vscode"
-import type { Event, Session, WorkflowRunInfo } from "@kilocode/sdk/v2/client"
+import type { Event, Session, WorkflowAgentInfo, WorkflowRunInfo } from "@kilocode/sdk/v2/client"
 
 // vscode mock is provided by the shared preload (tests/setup/vscode-mock.ts)
 const { KiloProvider } = await import("../../src/KiloProvider")
@@ -15,6 +15,10 @@ type Internals = {
   sessionDirectories: Map<string, string>
   sessionGitDirectories: Map<string, string>
   currentSession: Session | null
+  isWebviewReady: boolean
+  cachedConfigMessage: unknown
+  promptRecovery: Promise<void> | null
+  recoverPendingPrompts: () => void
   initializeConnection: () => Promise<void>
   setupWebviewMessageHandler: (webview: { onDidReceiveMessage: (handler: Receive) => { dispose: () => void } }) => void
   handleSyncSession: (sessionID: string, parentSessionID?: string) => Promise<void>
@@ -46,12 +50,17 @@ function connection(client: object = {}) {
   const state = {
     filter: undefined as ((event: Event, directory?: string) => boolean) | undefined,
     listener: undefined as ((event: Event, directory?: string) => void) | undefined,
+    change: undefined as ((state: string) => Promise<void>) | undefined,
   }
   return {
     emit(event: Event, directory?: string) {
       if (!state.filter || !state.listener) throw new Error("expected SSE subscription")
       if (!state.filter(event, directory)) return
       state.listener(event, directory)
+    },
+    async state(next: string) {
+      if (!state.change) throw new Error("expected state subscription")
+      await state.change(next)
     },
     connect: async () => {},
     getClient: () => client as never,
@@ -63,7 +72,10 @@ function connection(client: object = {}) {
       state.listener = cb
       return () => undefined
     },
-    onStateChange: () => () => undefined,
+    onStateChange: (cb: (state: string) => Promise<void>) => {
+      state.change = cb
+      return () => undefined
+    },
     onNotificationDismissed: () => () => undefined,
     onSessionAcknowledged: () => () => undefined,
     onClearPendingPrompts: () => () => undefined,
@@ -92,6 +104,12 @@ function connection(client: object = {}) {
     clearPermissionResponse: () => undefined,
     getQuestionDirectory: () => undefined,
     clearQuestionDirectory: () => undefined,
+    getPermissionRevision: () => 0,
+    recordPermissionDirectory: () => undefined,
+    prunePermissionDirectories: () => undefined,
+    getQuestionRevision: () => 0,
+    recordQuestionDirectory: () => undefined,
+    pruneQuestionDirectories: () => undefined,
     runExplicitAbort: (_sid: string, _dir: string, action: () => Promise<unknown>) => action(),
   }
 }
@@ -443,5 +461,191 @@ describe("KiloProvider workflow sessions", () => {
       run: { sessionID: string }
     }>
     expect(runs.map((message) => message.run.sessionID)).toEqual(["ses_parent"])
+  })
+
+  describe("runs already in progress", () => {
+    const agent = (index: number, status: WorkflowAgentInfo["status"], sessionID?: string): WorkflowAgentInfo => ({
+      id: `a${index}`,
+      index,
+      label: `agent ${index}`,
+      status,
+      ...(sessionID ? { sessionID } : {}),
+      agentType: "workflow-subagent",
+      tokens: 0,
+      tools: 0,
+      prompt: "find bugs",
+    })
+    const sessions: Record<string, Session> = {
+      ses_tree: info("ses_tree", "ses_parent", tree, flow),
+      ses_home: info("ses_home", "ses_parent", home, flow),
+      ses_done: info("ses_done", "ses_parent", home, flow),
+    }
+
+    /** A backend with one running run (an agent in its own worktree, one in the session's) and a finished run. */
+    function backend(calls: string[]) {
+      return {
+        workflow: {
+          list: async (params: { sessionID?: string; directory?: string }) => {
+            calls.push(`list ${params.sessionID} ${params.directory}`)
+            const done = { ...run, id: "wf_done", status: "completed" as const }
+            return { data: params.sessionID === "ses_parent" ? [done, run] : [] }
+          },
+          get: async (params: { runID: string; directory?: string }) => {
+            calls.push(`get ${params.runID} ${params.directory}`)
+            const list = [agent(0, "running", "ses_tree"), agent(1, "running", "ses_home")]
+            return {
+              data: { ...run, logs: [], list: [...list, agent(2, "completed", "ses_done"), agent(3, "queued")] },
+            }
+          },
+        },
+        session: {
+          get: async (params: { sessionID: string; directory?: string }) => {
+            calls.push(`session ${params.sessionID} ${params.directory}`)
+            return { data: sessions[params.sessionID] }
+          },
+        },
+        permission: {
+          list: async (params: { directory?: string }) => ({
+            data:
+              params.directory === tree
+                ? [{ id: "per-1", sessionID: "ses_tree", permission: "bash", patterns: [], always: [], metadata: {} }]
+                : [],
+          }),
+        },
+        question: {
+          list: async (params: { directory?: string }) => ({
+            data: params.directory === home ? [{ id: "que-1", sessionID: "ses_home", questions: [] }] : [],
+          }),
+        },
+        suggestion: { list: async () => ({ data: [] }) },
+        kilo: { profile: async () => ({ data: null }) },
+        config: { warnings: async () => ({ data: [] }) },
+      }
+    }
+
+    async function recover(state: Awaited<ReturnType<typeof setup>>) {
+      state.internal.recoverPendingPrompts()
+      await state.internal.promptRecovery
+    }
+
+    async function ready(calls: string[], opts?: Options) {
+      const state = await setup({ client: backend(calls), opts })
+      state.internal.isWebviewReady = true
+      state.internal.cachedConfigMessage = { type: "configLoaded", features: { workflows: true } }
+      return state
+    }
+
+    it("adopts the running agents of a tracked session and recovers their prompts", async () => {
+      const calls: string[] = []
+      const state = await ready(calls, manager())
+      await recover(state)
+
+      expect(calls).toEqual([
+        `list ses_parent ${home}`,
+        `get wf_1234abcd-abc ${home}`,
+        `session ses_tree ${home}`,
+        `session ses_home ${home}`,
+      ])
+      expect(state.internal.trackedSessionIds.has("ses_tree")).toBe(true)
+      expect(state.internal.trackedSessionIds.has("ses_home")).toBe(true)
+      expect(state.internal.trackedSessionIds.has("ses_done")).toBe(false)
+      // A worktree agent replies and recovers in its own worktree; the other shares its launching session's.
+      expect(state.internal.sessionDirectories.get("ses_tree")).toBe(tree)
+      expect(state.internal.sessionDirectories.get("ses_home")).toBe(home)
+      const types = state.sent.map((message) => message.type)
+      expect(types.filter((type) => type === "sessionUpdated")).toHaveLength(2)
+      expect(types).toContain("permissionRequest")
+      expect(types).toContain("questionRequest")
+
+      // Its later events from the worktree pass the directory gate like a live-adopted agent's.
+      state.sent.length = 0
+      state.service.emit(permission("ses_tree", "per-2"), tree)
+      expect(state.sent.map((message) => message.type)).toEqual(["permissionRequest"])
+    })
+
+    it("checks each session once per connection and again after a reconnect", async () => {
+      const calls: string[] = []
+      const state = await ready(calls)
+      await recover(state)
+      // Another session opens: only it is checked.
+      state.internal.trackedSessionIds.add("ses_other")
+      await recover(state)
+      expect(calls.filter((call) => call.startsWith("list"))).toEqual([
+        `list ses_parent ${home}`,
+        "list ses_other /repo",
+      ])
+
+      // Agents adopted already are not fetched again; the running run is checked again after a reconnect.
+      calls.length = 0
+      await state.service.state("reconnecting")
+      await state.service.state("connected")
+      await state.internal.promptRecovery
+      // Sessions are checked in parallel.
+      expect([...calls].sort()).toEqual([
+        `get wf_1234abcd-abc ${home}`,
+        "list ses_other /repo",
+        `list ses_parent ${home}`,
+      ])
+    })
+
+    it("checks a session that becomes tracked again", async () => {
+      const calls: string[] = []
+      const state = await ready(calls)
+      await recover(state)
+      state.internal.trackedSessionIds.delete("ses_parent")
+      await recover(state)
+      state.internal.trackedSessionIds.add("ses_parent")
+      await recover(state)
+      expect(calls.filter((call) => call.startsWith("list"))).toEqual([
+        `list ses_parent ${home}`,
+        `list ses_parent ${home}`,
+      ])
+    })
+
+    it("checks a session again when a request failed", async () => {
+      const calls: string[] = []
+      const state = await ready(calls)
+      const client = backend(calls)
+      const list = client.workflow.list
+      const failing = {
+        ...client,
+        workflow: { ...client.workflow, list: async () => Promise.reject(new Error("down")) },
+      }
+      state.service.getClient = () => failing as never
+      await recover(state)
+      expect(state.internal.trackedSessionIds.has("ses_tree")).toBe(false)
+      state.service.getClient = () => ({ ...client, workflow: { ...client.workflow, list } }) as never
+      await recover(state)
+      expect(state.internal.trackedSessionIds.has("ses_tree")).toBe(true)
+    })
+
+    it("asks nothing when the backend runs no workflows", async () => {
+      const calls: string[] = []
+      const state = await ready(calls)
+      state.internal.cachedConfigMessage = { type: "configLoaded", features: { workflows: false } }
+      await recover(state)
+      expect(calls).toEqual([])
+    })
+
+    it("asks the server once per connection before the config is loaded", async () => {
+      const calls: string[] = []
+      const client = {
+        ...backend(calls),
+        experimental: {
+          capabilities: {
+            get: async () => {
+              calls.push("capabilities")
+              return { data: { backgroundSubagents: false, workflows: false } }
+            },
+          },
+        },
+      }
+      const state = await setup({ client })
+      state.internal.isWebviewReady = true
+      await recover(state)
+      state.internal.trackedSessionIds.add("ses_other")
+      await recover(state)
+      expect(calls).toEqual(["capabilities"])
+    })
   })
 })

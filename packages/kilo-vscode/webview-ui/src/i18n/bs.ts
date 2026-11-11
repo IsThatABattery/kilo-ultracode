@@ -969,6 +969,9 @@ export const dict = {
   "settings.experimental.ultracode.title": "Ultracode po zadanom",
   "settings.experimental.ultracode.description":
     "Pokreni sesije s uključenim ultracodeom, tako da agent planira tok rada s više agenata za svaki značajan zadatak",
+  "settings.experimental.ultracodeKeyword.title": "Okidač riječi Ultracode",
+  "settings.experimental.ultracodeKeyword.description":
+    "Dozvoli da riječ ultracode u poruci uključi tok rada s više agenata za tu poruku",
   "settings.experimental.continueOnDeny.title": "Nastavi pri odbijanju",
   "settings.experimental.continueOnDeny.description": "Nastavi petlju agenta kada je dozvola odbijena",
   "settings.sandboxing.title": "Rad u izoliranom okruženju",

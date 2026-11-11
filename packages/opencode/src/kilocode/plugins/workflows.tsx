@@ -212,10 +212,10 @@ const tui: TuiPlugin = async (api) => {
   // Workflows can be off by config or KILO_DISABLE_WORKFLOWS; only the server knows, so ask its capabilities.
   const refresh = async () => {
     const result = await api.client.experimental.capabilities.get().catch(() => undefined)
-    const value = result?.data?.workflows === true
-    setAvailable(value)
-    UltracodeKeyword.report(value)
+    setAvailable(result?.data?.workflows === true)
   }
+  // The server ignores the keyword when experimental.ultracode_keyword is off, so the prompt must not highlight it.
+  UltracodeKeyword.report(() => available() && api.state.config.experimental?.ultracode_keyword !== false)
   void refresh()
   api.lifecycle.onDispose(() => UltracodeKeyword.report(false))
   // A reload of this directory's instance may follow a config change; worktree agents dispose other directories.

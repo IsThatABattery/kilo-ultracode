@@ -4,11 +4,9 @@
 // sandbox inheritance, drain linking, cost propagation) but returns the agent's raw final text, or
 // with `opts.schema` its locally validated StructuredOutput value, re-prompting on a miss.
 
-import path from "path"
 import { Cause, Effect, Exit, Result } from "effect"
 import * as Log from "@opencode-ai/core/util/log"
 import { Database } from "@opencode-ai/core/database/database"
-import { Global } from "@opencode-ai/core/global"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
 import { Agent } from "@/agent/agent"
 import { deriveSubagentSessionPermission } from "@/agent/subagent-permissions"
@@ -247,15 +245,8 @@ export namespace WorkflowSpawn {
             pattern: "*",
             action: "deny" as const,
           })),
+          // Includes the deny for run files: scripts and journals are the launching session's own.
           KiloTask.permissions(rules, false),
-          // Run files (scripts, journals that resumes replay as cached results) are the launching session's own.
-          [
-            {
-              permission: "external_directory",
-              pattern: path.join(Global.Path.data, "workflow", "*"),
-              action: "deny" as const,
-            },
-          ],
         )
 
         const schema = opts.schema
@@ -281,10 +272,7 @@ export namespace WorkflowSpawn {
         // Provider sanitising can retype values (Gemini turns numeric enums into string enums); the model can then
         // only answer in the sent shape, so validation coerces back to the script's original schema.
         const coerce = schema !== undefined && JSON.stringify(sent) !== JSON.stringify(schema)
-        // A class instance: the user message persists `format` through the schema's encoder.
-        const format = sent
-          ? new SessionV1.OutputFormatJsonSchema({ type: "json_schema", schema: sent, retryCount: 0 })
-          : undefined
+        const format = sent ? { type: "json_schema" as const, schema: sent, retryCount: 0 } : undefined
         const ctx = yield* InstanceState.context
 
         const done = (value: unknown, sessionID: SessionID): Outcome => ({

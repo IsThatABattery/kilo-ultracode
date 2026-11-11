@@ -1,6 +1,17 @@
-import type { PermissionRule } from "../../types/messages"
+import type { PermissionRequest, PermissionRule } from "../../types/messages"
 
 export type RuleDecision = "approved" | "denied" | "pending"
+
+/**
+ * The auto-approve rules a permission prompt offers to save. Bash and browser asks send finer rules in
+ * metadata.rules, other tools their always list. An ask that disables "always" offers none, like the
+ * CLI's Allow once / Reject: a workflow script the model wrote (only a saved workflow run by name can be
+ * approved for good), a protected config path or a memory save.
+ */
+export function savableRules(request: Pick<PermissionRequest, "always" | "args">) {
+  if (request.args?.disableAlways === true) return []
+  return request.args?.rules ?? request.always ?? []
+}
 
 // Escape control and bidi/format characters when displaying a skill-shell command, so a
 // command can't repaint the prompt or use Trojan-Source reordering to make the visible text

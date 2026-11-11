@@ -118,6 +118,25 @@ describe("workflow permission defaults", () => {
     expect(KiloTask.permissions([], true)).toContainEqual({ permission: "workflow", pattern: "*", action: "deny" })
     expect(KiloTask.permissions([], false)).toContainEqual({ permission: "workflow", pattern: "*", action: "deny" })
   })
+
+  it.instance("task subagent sessions may not read or edit run files, although their agent's defaults allow it", () =>
+    Effect.gen(function* () {
+      const code = yield* agent("code")
+      const general = yield* agent("general")
+      expect(action(general, "external_directory", run)).toBe("allow")
+      // The child session ruleset the task tool builds; the runtime evaluates merge(agent, session).
+      for (const task of [false, true]) {
+        const session = KiloTask.merge(
+          deriveSubagentSessionPermission({ parentSessionPermission: [], subagent: general }),
+          KiloTask.permissions(KiloTask.inherited({ caller: code, session: { permission: [] }, mcp: undefined }), task),
+        )
+        const runtime = Permission.merge(general.permission, session)
+        expect(Permission.evaluate("external_directory", run, runtime).action).toBe("deny")
+        const other = path.join(Global.Path.data, "other", "file")
+        expect(Permission.evaluate("external_directory", other, runtime).action).toBe("ask")
+      }
+    }),
+  )
 })
 
 describe("KiloStructured.choice", () => {

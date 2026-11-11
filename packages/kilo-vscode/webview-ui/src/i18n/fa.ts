@@ -953,6 +953,9 @@ export const dict = {
   "settings.experimental.ultracode.title": "Ultracode به‌صورت پیش‌فرض",
   "settings.experimental.ultracode.description":
     "جلسه‌ها را با ultracode روشن شروع کن تا عامل برای هر کار اساسی یک گردش کار چندعاملی برنامه‌ریزی کند",
+  "settings.experimental.ultracodeKeyword.title": "کلیدواژه Ultracode",
+  "settings.experimental.ultracodeKeyword.description":
+    "اجازه بده واژه ultracode در یک پیام، گردش کار چندعاملی را برای همان پیام فعال کند",
   "settings.experimental.continueOnDeny.title": "ادامه در صورت رد",
   "settings.experimental.continueOnDeny.description": "حلقه عامل را هنگام رد شدن یک مجوز ادامه دهید",
   "settings.experimental.codeMode.title": "فراخوانی برنامه‌نویسی ابزارها",

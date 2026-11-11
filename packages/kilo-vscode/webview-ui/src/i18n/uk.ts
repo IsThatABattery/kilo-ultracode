@@ -961,6 +961,9 @@ export const dict = {
   "settings.experimental.ultracode.title": "Ultracode за замовчуванням",
   "settings.experimental.ultracode.description":
     "Починати сесії з увімкненим ultracode, щоб агент планував мультиагентний робочий процес для кожного суттєвого завдання",
+  "settings.experimental.ultracodeKeyword.title": "Ключове слово Ultracode",
+  "settings.experimental.ultracodeKeyword.description":
+    "Слово ultracode у повідомленні вмикає мультиагентний робочий процес для цього повідомлення",
   "settings.experimental.continueOnDeny.title": "Продовжувати при відхиленні",
   "settings.experimental.continueOnDeny.description": "Продовжувати цикл агента, коли дозвіл відхилено",
   "settings.sandboxing.title": "Пісочниця",

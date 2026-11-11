@@ -980,6 +980,9 @@ export const dict = {
   "settings.experimental.ultracode.title": "Ultracode por defecto",
   "settings.experimental.ultracode.description":
     "Inicia las sesiones con ultracode activado, para que el agente planifique un flujo de trabajo multiagente en cada tarea importante",
+  "settings.experimental.ultracodeKeyword.title": "Activador por palabra Ultracode",
+  "settings.experimental.ultracodeKeyword.description":
+    "Permite que la palabra ultracode en un mensaje active un flujo de trabajo multiagente para ese mensaje",
   "settings.experimental.continueOnDeny.title": "Continuar al denegar",
   "settings.experimental.continueOnDeny.description": "Continuar el bucle del agente cuando se deniega un permiso",
   "settings.sandboxing.title": "Sandbox",

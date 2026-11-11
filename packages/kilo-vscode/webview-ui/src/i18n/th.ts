@@ -954,6 +954,9 @@ export const dict = {
   "settings.experimental.ultracode.title": "เปิด Ultracode เป็นค่าเริ่มต้น",
   "settings.experimental.ultracode.description":
     "เริ่มเซสชันโดยเปิด ultracode เพื่อให้เอเจนต์วางแผนเวิร์กโฟลว์แบบหลายเอเจนต์สำหรับทุกงานที่สำคัญ",
+  "settings.experimental.ultracodeKeyword.title": "คำเรียก Ultracode",
+  "settings.experimental.ultracodeKeyword.description":
+    "ให้คำว่า ultracode ในข้อความเปิดใช้เวิร์กโฟลว์แบบหลายเอเจนต์สำหรับข้อความนั้น",
   "settings.experimental.continueOnDeny.title": "ดำเนินต่อเมื่อถูกปฏิเสธ",
   "settings.experimental.continueOnDeny.description": "ดำเนินลูปเอเจนต์ต่อเมื่อสิทธิ์ถูกปฏิเสธ",
   "settings.sandboxing.title": "การทำงานในแซนด์บ็อกซ์",

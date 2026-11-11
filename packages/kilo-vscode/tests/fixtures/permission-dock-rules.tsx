@@ -109,4 +109,50 @@ for (const mode of ["reject", "once", "approve", "deny", "keyboard"] as const) {
     root.remove()
   }
 }
+
+// A workflow script the model wrote, like any ask that disables always (here a protected config edit),
+// offers no auto-approve rule; a saved workflow run by name keeps its project-scoped one.
+const workflow = (always: string[], args: Record<string, unknown>): PermissionRequest => ({
+  id: "permission-workflow",
+  sessionID: "session-1",
+  toolName: "workflow",
+  patterns: ["script:review"],
+  always,
+  args: { name: "review", description: "Review the diff", ...args },
+})
+const cases: Array<[PermissionRequest, number]> = [
+  [workflow([], { disableAlways: true }), 0],
+  [{ ...workflow(["*"], { disableAlways: true }), toolName: "edit" }, 0],
+  [{ ...workflow(["review@/repo"], {}), patterns: ["review@/repo"] }, 1],
+]
+for (const [item, rows] of cases) {
+  const root = document.createElement("div")
+  document.body.append(root)
+  const calls: Array<{ response: string; approved: string[]; denied: string[] }> = []
+  const dispose = render(
+    () => (
+      <SessionContext.Provider value={session as never}>
+        <LanguageContext.Provider value={language as never}>
+          <ConfigContext.Provider value={{ config: () => ({}) } as never}>
+            <PermissionDock
+              request={item}
+              responding={false}
+              onDecide={(_id, response, approved, denied) => calls.push({ response, approved, denied })}
+            />
+          </ConfigContext.Provider>
+        </LanguageContext.Provider>
+      </SessionContext.Provider>
+    ),
+    root,
+  )
+  try {
+    assert.equal(!!root.querySelector('[data-slot="permission-rules-section"]'), rows > 0)
+    assert.equal(root.querySelectorAll('[data-slot="permission-rule-row"]').length, rows)
+    root.querySelector<HTMLButtonElement>('[data-slot="permission-actions"] button:first-child')?.click()
+    assert.deepEqual(calls, [{ response: "once", approved: [], denied: [] }])
+  } finally {
+    dispose()
+    root.remove()
+  }
+}
 await window.happyDOM.close()

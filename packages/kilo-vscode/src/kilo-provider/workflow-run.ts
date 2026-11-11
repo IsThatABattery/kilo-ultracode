@@ -3,11 +3,17 @@
  * Kept free of imports that pull in the provider, so both the SSE mapper and the request router can use it.
  */
 
-import type { WorkflowAgentInfo, WorkflowRunDetail as Detail, WorkflowRunInfo as Info } from "@kilocode/sdk/v2/client"
+import type {
+  KiloClient,
+  Session,
+  WorkflowAgentInfo,
+  WorkflowRunDetail as Detail,
+  WorkflowRunInfo as Info,
+} from "@kilocode/sdk/v2/client"
 import type { WorkflowAgent, WorkflowRun, WorkflowRunDetail } from "../../webview-ui/src/types/messages/workflow"
 import { childID } from "./task-session"
 
-// Effect's Schema.Number also admits NaN and the infinities, which the SDK types spell as strings.
+// The backend sends finite numbers; anything else (a malformed or hand-edited run.json) reads as unset.
 function time(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined
 }
@@ -70,6 +76,48 @@ export function workflowAgent(
   tracked: (sessionID: string) => boolean,
 ) {
   return !!info.parentID && !!info.metadata?.["kilo.workflow"] && tracked(info.parentID)
+}
+
+/**
+ * The sessions of the running agents in a session's runs that are still going (running or paused).
+ * A panel adopts agents from their live session.created event, so one that opens, reloads or reconnects
+ * mid-run never saw the agents already running; it adopts them from here. Each session carries its own
+ * directory, which is its worktree for an agent run with isolation: 'worktree'. `complete` is false when
+ * a request failed, so the caller checks the session again later.
+ */
+export async function runningAgents(
+  client: Pick<KiloClient, "workflow" | "session">,
+  sessionID: string,
+  directory: string,
+  known: (sessionID: string) => boolean,
+) {
+  const state = { complete: true }
+  const fail = (err: unknown) => {
+    state.complete = false
+    console.warn("[Kilo New] Failed to load workflow runs:", err)
+    return undefined
+  }
+  const runs = await client.workflow
+    .list({ sessionID, directory }, { throwOnError: true })
+    .then((res) => res.data, fail)
+  const live = (runs ?? []).filter((run) => run.status === "running" || run.status === "paused")
+  const details = await Promise.all(
+    live.map((run) =>
+      client.workflow.get({ runID: run.id, directory }, { throwOnError: true }).then((res) => res.data, fail),
+    ),
+  )
+  const ids = details.flatMap(
+    (detail) =>
+      detail?.list.flatMap((agent) =>
+        agent.status === "running" && agent.sessionID && !known(agent.sessionID) ? [agent.sessionID] : [],
+      ) ?? [],
+  )
+  const sessions = await Promise.all(
+    ids.map((id) =>
+      client.session.get({ sessionID: id, directory }, { throwOnError: true }).then((res) => res.data, fail),
+    ),
+  )
+  return { sessions: sessions.filter((session): session is Session => !!session), complete: state.complete }
 }
 
 // Events of a workflow agent that still matter while no surface shows its transcript.

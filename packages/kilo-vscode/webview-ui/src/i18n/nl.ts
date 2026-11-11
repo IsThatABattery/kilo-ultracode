@@ -966,6 +966,9 @@ export const dict = {
   "settings.experimental.ultracode.title": "Ultracode standaard aan",
   "settings.experimental.ultracode.description":
     "Start sessies met ultracode aan, zodat de agent voor elke omvangrijke taak een multi-agentworkflow plant",
+  "settings.experimental.ultracodeKeyword.title": "Ultracode-trefwoord",
+  "settings.experimental.ultracodeKeyword.description":
+    "Laat het woord ultracode in een bericht een multi-agentworkflow inschakelen voor dat bericht",
   "settings.experimental.continueOnDeny.title": "Doorgaan bij weigering",
   "settings.experimental.continueOnDeny.description":
     "Ga door met de agent loop wanneer een toestemming wordt geweigerd",

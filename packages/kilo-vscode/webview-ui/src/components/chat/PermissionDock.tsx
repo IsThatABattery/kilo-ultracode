@@ -22,6 +22,7 @@ import {
   describePatterns,
   describeRule,
   displaySkillCommand,
+  savableRules,
   savedRuleStates,
   workflowPhases,
   type RuleDecision,
@@ -57,8 +58,9 @@ export const PermissionDock: Component<{
   const skillShell = () => props.request.args?.skillShell === true
   const skillShellCommands = () =>
     skillShell() && props.request.toolName === "bash" ? (props.request.args?.commands ?? []) : []
-  // Bash sends fine-grained rules via metadata.rules; other tools use the always array.
-  const rules = () => props.request.args?.rules ?? props.request.always ?? []
+  // Bash sends fine-grained rules via metadata.rules; other tools use the always array. An ask with no
+  // always rules, or one that disables them, shows no auto-approve section.
+  const rules = () => savableRules(props.request)
   // Rules like "git *" or "git log *" — strip the trailing wildcard for display.
   // A bare "*" (global wildcard) becomes empty so only the tool name shows.
   const label = (rule: string) => (rule === "*" ? "" : rule.replace(/ \*$/, ""))

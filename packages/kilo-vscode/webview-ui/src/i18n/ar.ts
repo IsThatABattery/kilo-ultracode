@@ -945,6 +945,9 @@ export const dict = {
   "settings.experimental.ultracode.title": "Ultracode افتراضيًا",
   "settings.experimental.ultracode.description":
     "بدء الجلسات مع تشغيل ultracode، ليخطط الوكيل لسير عمل متعدد الوكلاء لكل مهمة جوهرية",
+  "settings.experimental.ultracodeKeyword.title": "مشغّل كلمة Ultracode",
+  "settings.experimental.ultracodeKeyword.description":
+    "السماح لكلمة ultracode في الرسالة بتفعيل سير عمل متعدد الوكلاء لتلك الرسالة",
   "settings.experimental.continueOnDeny.title": "المتابعة عند الرفض",
   "settings.experimental.continueOnDeny.description": "متابعة حلقة الوكيل عند رفض الإذن",
   "settings.sandboxing.title": "العزل",
