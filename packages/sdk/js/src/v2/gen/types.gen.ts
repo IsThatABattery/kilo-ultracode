@@ -5176,6 +5176,7 @@ export type SessionHostWorkspaceProfilePage = {
 
 export type SessionHostWorkspaceProfileDefaultInput = {
   id: string
+  organizationID?: SessionHostOrganizationId
 }
 
 export type SessionHostWorkspaceProfileDefaultResult = {
