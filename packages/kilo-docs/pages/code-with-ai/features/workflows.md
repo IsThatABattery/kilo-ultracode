@@ -100,7 +100,7 @@ The ultracode switch and `/ultracode` are hidden when dynamic workflows are turn
 
 Typing the word `ultracode` anywhere in a message opts in for that message only, without changing the session switch. Only text you type counts: slash commands such as `/ultracode`, command templates, and text Kilo adds to the conversation do not. Neither does a prompt passed to `kilo run` or a GitHub comment that the Kilo GitHub action relays.
 
-In the CLI, the keyword is highlighted in the prompt. To send the message without opting in, press `Alt+W` (`Option+W` on macOS), or `Backspace` right after the keyword. The highlight goes away and the keyword no longer counts for that message.
+In the CLI and VS Code, the keyword is highlighted in the prompt. To send the message without opting in, press `Alt+W` (`Option+W` on macOS), or `Backspace` right after the keyword. The highlight goes away and the keyword no longer counts for that message.
 
 To stop the keyword from opting in at all, set `experimental.ultracode_keyword` to `false`. The ultracode switch and `/ultracode` keep working.
 
@@ -155,7 +155,7 @@ Save a run's script to reuse it later. In the CLI, open the run in `/workflows`,
 | Project | `.kilo/workflows/<name>.js`, in the closest existing `.kilo/workflows/` folder between the current directory and the project root, otherwise at the project root |
 | Global | `~/.config/kilo/workflows/<name>.js` |
 
-You can also write or edit these files yourself. Kilo also reads `.js` workflows from `.kilocode/workflows/`, `~/.kilo/workflows/`, and `~/.kilocode/workflows/`.
+You can also write or edit these files yourself. Kilo also reads `.js` workflows from `.kilocode/workflows/`, `~/.kilo/workflows/`, and `~/.kilocode/workflows/`, and from Claude Code's `.claude/workflows/` and `~/.claude/workflows/`, so workflows saved in Claude Code run here too. Kilo's own folders win over `.claude` at the same level. Set `KILO_DISABLE_CLAUDE_CODE=1` to skip the `.claude` folders.
 
 {% callout type="note" %}
 `.md` files in a `workflows/` folder are legacy [slash-command workflows](/docs/customize/workflows), which Kilo converts to commands. Only `.js` files are dynamic workflows.

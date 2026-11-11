@@ -19,6 +19,11 @@ export namespace WorkflowSaved {
 
   type Scope = Entry["scope"]
 
+  /** Claude Code's user directory, whose `workflows/` Claude Code saves user-scoped workflows to. */
+  function claude() {
+    return path.resolve(Global.Path.home, ".claude")
+  }
+
   /** Config directories that belong to the user rather than a project (mirrors ConfigPaths.directories). */
   function globals() {
     const home = Global.Path.home
@@ -27,6 +32,7 @@ export namespace WorkflowSaved {
         Global.Path.config,
         path.join(home, ".kilocode"),
         path.join(home, ".kilo"),
+        claude(),
         ...(Flag.KILO_CONFIG_DIR ? [Flag.KILO_CONFIG_DIR] : []),
       ].map((dir) => path.resolve(dir)),
     )
@@ -39,9 +45,9 @@ export namespace WorkflowSaved {
 
   /**
    * Search order, highest precedence first. Project directories come first, nearest to the working directory
-   * winning (a linked worktree's own `.kilo` beats the primary checkout's fallback, `.kilo` beats `.kilocode` at the
-   * same level). Global directories follow in config precedence: KILO_CONFIG_DIR, `~/.kilo`, `~/.kilocode`, then
-   * the global config dir.
+   * winning (a linked worktree's own `.kilo` beats the primary checkout's fallback; at the same level `.kilo` beats
+   * `.kilocode`, which beats Claude Code's `.claude`). Global directories follow in config precedence:
+   * KILO_CONFIG_DIR, `~/.kilo`, `~/.kilocode`, the global config dir, then `~/.claude`.
    */
   export function order(input: { directories: string[]; directory: string }) {
     const global = globals()
@@ -51,7 +57,7 @@ export namespace WorkflowSaved {
       return {
         near: inside(input.directory, base) ? 1 : 0,
         depth: base.split(path.sep).length,
-        kilo: path.basename(dir) === ".kilo" ? 1 : 0,
+        kilo: [".claude", ".kilocode", ".kilo"].indexOf(path.basename(dir)),
       }
     }
     const project = dirs
@@ -59,11 +65,38 @@ export namespace WorkflowSaved {
       .map((dir) => ({ dir, rank: rank(dir) }))
       .toSorted((a, b) => b.rank.near - a.rank.near || b.rank.depth - a.rank.depth || b.rank.kilo - a.rank.kilo)
       .map((item) => ({ dir: item.dir, scope: "project" as Scope }))
-    const user = dirs
-      .filter((dir) => global.has(dir))
-      .toReversed()
-      .map((dir) => ({ dir, scope: "global" as Scope }))
-    return [...project, ...user]
+    const user = dirs.filter((dir) => global.has(dir) && dir !== claude()).toReversed()
+    const last = dirs.includes(claude()) ? [claude()] : []
+    return [...project, ...[...user, ...last].map((dir) => ({ dir, scope: "global" as Scope }))]
+  }
+
+  /**
+   * The directories from `directory` up to the project root (inclusive), nearest first. Outside a git project, or
+   * when the directory is not inside the worktree, only the directory itself.
+   */
+  function bases(input: { directory: string; worktree: string }) {
+    const root = input.worktree === "/" || !inside(input.directory, input.worktree) ? input.directory : input.worktree
+    const walk = (dir: string): string[] => {
+      if (dir === root || !inside(dir, root) || path.dirname(dir) === dir) return [dir]
+      return [dir, ...walk(path.dirname(dir))]
+    }
+    return walk(path.resolve(input.directory))
+  }
+
+  /**
+   * Claude Code's workflow directories, so workflows saved there run here too: every existing `.claude` from the
+   * working directory up to the project root, then `~/.claude`. None when KILO_DISABLE_CLAUDE_CODE is set.
+   */
+  async function external(input: { directory: string; worktree?: string }) {
+    if (Flag.KILO_DISABLE_CLAUDE_CODE) return []
+    const dirs = [
+      ...bases({ directory: input.directory, worktree: input.worktree ?? "/" }).map((base) =>
+        path.join(base, ".claude"),
+      ),
+      claude(),
+    ]
+    const found = await Promise.all(dirs.map((dir) => directory(path.join(dir, "workflows"))))
+    return dirs.filter((_, index) => found[index])
   }
 
   function parse(file: string, text: string) {
@@ -100,11 +133,14 @@ export namespace WorkflowSaved {
 
   /**
    * Discover saved workflows (`<dir>/workflows/*.js`) across Kilo config directories (the caller passes
-   * Config.directories()). One entry per name: the nearest project directory wins, and project beats global.
-   * Files whose `meta` does not parse are skipped.
+   * Config.directories()) and Claude Code's `.claude` directories. One entry per name: the nearest project directory
+   * wins, and project beats global. Files whose `meta` does not parse are skipped.
    */
-  export async function list(input: { directories: string[]; directory: string }): Promise<Entry[]> {
-    const found = await Promise.all(order(input).map((item) => scan(item.dir, item.scope)))
+  export async function list(input: { directories: string[]; directory: string; worktree?: string }): Promise<Entry[]> {
+    const directories = [...input.directories, ...(await external(input))]
+    const found = await Promise.all(
+      order({ directories, directory: input.directory }).map((item) => scan(item.dir, item.scope)),
+    )
     const seen = new Set<string>()
     return found.flat().filter((item) => {
       if (seen.has(item.name)) return false
@@ -114,7 +150,7 @@ export namespace WorkflowSaved {
   }
 
   /** Resolve a saved workflow by `meta.name`, falling back to the file name without `.js`. */
-  export async function find(input: { directories: string[]; directory: string; name: string }) {
+  export async function find(input: { directories: string[]; directory: string; worktree?: string; name: string }) {
     const items = await list(input)
     return (
       items.find((item) => item.name === input.name) ??
@@ -144,15 +180,10 @@ export namespace WorkflowSaved {
 
   /** Closest existing `.kilo/workflows/` from `directory` up to the project root, else `<root>/.kilo/workflows/`. */
   async function project(input: { directory: string; worktree: string }) {
-    const root = input.worktree === "/" || !inside(input.directory, input.worktree) ? input.directory : input.worktree
-    const walk = (dir: string): string[] => {
-      if (dir === root || !inside(dir, root) || path.dirname(dir) === dir) return [dir]
-      return [dir, ...walk(path.dirname(dir))]
-    }
-    const bases = walk(path.resolve(input.directory))
-    const found = await Promise.all(bases.map((base) => directory(path.join(base, ".kilo", "workflows"))))
+    const dirs = bases(input)
+    const found = await Promise.all(dirs.map((base) => directory(path.join(base, ".kilo", "workflows"))))
     const index = found.indexOf(true)
-    const kilo = path.join(index === -1 ? root : bases[index], ".kilo")
+    const kilo = path.join(index === -1 ? (dirs.at(-1) ?? input.directory) : dirs[index], ".kilo")
     for (const item of [kilo, path.join(kilo, "workflows")]) {
       if (await link(item)) throw new Error(`Refusing to save a workflow through a symlink: ${item}`)
     }
@@ -212,6 +243,7 @@ export namespace WorkflowSaved {
     flags: Parameters<typeof KiloWorkflowEnabled.enabled>[1]
     directories: string[]
     directory: string
+    worktree?: string
   }) {
     if (!KiloWorkflowEnabled.enabled(input.cfg, input.flags)) return []
     const items = yield* Effect.promise(() => list(input))
@@ -240,12 +272,14 @@ export namespace WorkflowSaved {
       config: Pick<Config.Interface, "get" | "directories">
       flags: Parameters<typeof KiloWorkflowEnabled.enabled>[1]
       directory: string
+      worktree?: string
     },
   ) {
     const rev = revision()
     const cfg = yield* input.config.get()
     const directories = yield* input.config.directories()
-    for (const item of yield* commands({ cfg, flags: input.flags, directories, directory: input.directory })) {
+    const opts = { cfg, flags: input.flags, directories, directory: input.directory, worktree: input.worktree }
+    for (const item of yield* commands(opts)) {
       map[item.name] ??= item
     }
     built.set(map, rev)

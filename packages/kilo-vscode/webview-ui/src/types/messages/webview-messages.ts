@@ -36,6 +36,8 @@ export interface SendMessageRequest {
   variant?: string
   /** Explicit ultracode choice; omitted when the backend lacks workflows. */
   ultracode?: boolean
+  /** The user dismissed the `ultracode` keyword in the prompt, so it does not opt this message in. */
+  noUltracode?: boolean
   files?: FileAttachment[]
   review?: ReviewMessageData
   browserFeedback?: BrowserFeedbackData
@@ -160,6 +162,7 @@ export interface ImportAndSendMessage {
   agent?: string
   variant?: string
   ultracode?: boolean
+  noUltracode?: boolean
   files?: FileAttachment[]
   review?: ReviewMessageData
   browserFeedback?: BrowserFeedbackData

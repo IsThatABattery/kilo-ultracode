@@ -77,6 +77,7 @@ import {
   removeSessionToolPart,
   removeSessionToolPartsForMessage,
   revertPromptState,
+  sendFields,
   upsertSessionToolPart,
   type MessagePageState,
 } from "./session-utils"
@@ -2216,6 +2217,7 @@ export const SessionProvider: ParentComponent = (props) => {
     origin?: string | null,
     browserFeedback?: BrowserFeedbackData,
     injectedTitle?: string,
+    noUltracode?: boolean,
   ): boolean {
     if (!server.isConnected()) {
       console.warn("[Kilo New] Cannot send message: not connected")
@@ -2241,11 +2243,7 @@ export const SessionProvider: ParentComponent = (props) => {
         cloudSessionId: preview,
         text,
         messageID,
-        providerID: settings.model?.providerID,
-        modelID: settings.model?.modelID,
-        agent: settings.agent,
-        variant: settings.variant,
-        ultracode: settings.ultracode,
+        ...sendFields(settings, noUltracode),
         files,
         review,
         browserFeedback,
@@ -2272,11 +2270,7 @@ export const SessionProvider: ParentComponent = (props) => {
       messageID,
       sessionID: sid,
       draftID: effectiveDraftID,
-      providerID: settings.model?.providerID,
-      modelID: settings.model?.modelID,
-      agent: settings.agent,
-      variant: settings.variant,
-      ultracode: settings.ultracode,
+      ...sendFields(settings, noUltracode),
       files,
       review,
       browserFeedback,

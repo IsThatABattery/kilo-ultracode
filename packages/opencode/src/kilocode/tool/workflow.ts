@@ -29,7 +29,8 @@ export const Params = Schema.Struct({
       "Path to a workflow script file on disk. Every workflow invocation persists its script under the session directory and returns the path in the tool result. To iterate, edit that file with the edit/write tools and re-invoke the workflow tool with the same `scriptPath` instead of re-sending the full script. Takes precedence over `script` and `name`.",
   }),
   name: Schema.optional(Schema.String).annotate({
-    description: "Name of a saved workflow (from .kilo/workflows/). Resolves to a self-contained script.",
+    description:
+      "Name of a saved workflow (from .kilo/workflows/ or .claude/workflows/). Resolves to a self-contained script.",
   }),
   args: Schema.optional(Schema.Unknown).annotate({
     description:
@@ -125,14 +126,19 @@ export const WorkflowTool = Tool.define<typeof Params, Meta, Config.Service, "wo
         if (params.name) {
           const directories = yield* config.directories()
           const found = yield* Effect.promise(() =>
-            WorkflowSaved.find({ directories, directory: inst.directory, name: params.name ?? "" }),
+            WorkflowSaved.find({
+              directories,
+              directory: inst.directory,
+              worktree: inst.worktree,
+              name: params.name ?? "",
+            }),
           )
           if (!found) {
             const names = (yield* Effect.promise(() =>
-              WorkflowSaved.list({ directories, directory: inst.directory }),
+              WorkflowSaved.list({ directories, directory: inst.directory, worktree: inst.worktree }),
             )).map((item) => item.name)
             return yield* fail(
-              `Unknown saved workflow "${params.name}".${names.length ? ` Saved workflows: ${names.join(", ")}` : " No saved workflows were found in .kilo/workflows/."}`,
+              `Unknown saved workflow "${params.name}".${names.length ? ` Saved workflows: ${names.join(", ")}` : " No saved workflows were found in .kilo/workflows/ or .claude/workflows/."}`,
             )
           }
           const text = yield* Effect.tryPromise(() => Bun.file(found.path).text()).pipe(

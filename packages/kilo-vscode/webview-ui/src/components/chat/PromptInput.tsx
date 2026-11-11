@@ -55,6 +55,7 @@ import { PromptOverflow, type OverflowItem } from "./PromptOverflow"
 import { fold, reserve } from "./prompt-fold"
 import { useFileMention } from "../../hooks/useFileMention"
 import { usePasteCollapse } from "../../hooks/usePasteCollapse"
+import { dismissKey, keywordRanges, markKeyword } from "./ultracode-keyword"
 import type { MentionResult, WorktreeReference } from "../../hooks/file-mention-utils"
 import { isMentionEntry } from "../../hooks/file-mention-utils"
 import { useTerminalContext } from "../../hooks/useTerminalContext"
@@ -434,6 +435,18 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     enabled: () => globalConfig()?.experimental?.disable_paste_summary !== true,
     text,
   })
+  // The `ultracode` keyword opts a message in to a workflow unless the user dismissed it (Alt+W, or Backspace right
+  // after it). Inert when the backend lacks workflows or experimental.ultracode_keyword is off.
+  const [dismissed, setDismissed] = createSignal(false)
+  const keyword = createMemo(() =>
+    features().workflows && config().experimental?.ultracode_keyword !== false ? keywordRanges(text()) : [],
+  )
+  // Dismissal lasts for this message: it ends once the keyword is gone (sent, cleared, or deleted) or the draft changes.
+  createEffect(() => {
+    if (keywordRanges(text()).length === 0) setDismissed(false)
+  })
+  createEffect(on(draftKey, () => setDismissed(false), { defer: true }))
+  const highlighted = () => (dismissed() ? [] : keyword())
   const [contexts, setContexts] = createSignal<CodeContext[]>([])
   const [enhancing, setEnhancing] = createSignal(false)
   const [autoApprove, setAutoApprove] = createSignal(false)
@@ -1474,6 +1487,14 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       return
     }
     if (locked()) return
+    if (
+      textareaRef &&
+      dismissKey(e, { start: textareaRef.selectionStart, end: textareaRef.selectionEnd }, highlighted())
+    ) {
+      e.preventDefault()
+      setDismissed(true)
+      return
+    }
     // Undo enhanced prompt with Ctrl+Z / ⌘Z
     if (undoKey(e) === "undo" && preEnhanceText !== null) {
       e.preventDefault()
@@ -1925,6 +1946,8 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         data,
         origin ?? null,
         browserData,
+        undefined,
+        dismissed() && keyword().length > 0,
       )
       if (!accepted) return
     }
@@ -2283,7 +2306,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
             {(caps) => <PromptHint before={caps.before} binding={caps.binding} after={caps.after} />}
           </Show>
           <div class="prompt-input-highlight-overlay" ref={highlightRef} aria-hidden="true" dir="auto">
-            <Index each={paste.segments(text(), highlightMentions())}>
+            <Index each={markKeyword(paste.segments(text(), highlightMentions()), highlighted())}>
               {(seg) => (
                 <Show
                   when={seg().kind !== "paste"}
@@ -2315,7 +2338,12 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                     </span>
                   }
                 >
-                  <Show when={seg().kind === "mention"} fallback={<span>{seg().text}</span>}>
+                  <Show
+                    when={seg().kind === "mention"}
+                    fallback={
+                      <span classList={{ "prompt-input-ultracode": seg().kind === "ultracode" }}>{seg().text}</span>
+                    }
+                  >
                     <span
                       class="prompt-input-file-mention"
                       classList={{

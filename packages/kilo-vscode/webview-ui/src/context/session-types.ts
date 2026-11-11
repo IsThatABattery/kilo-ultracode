@@ -199,6 +199,8 @@ export interface SessionContextValue {
     origin?: string | null,
     browserFeedback?: BrowserFeedbackData,
     injectedTitle?: string,
+    /** The user dismissed the `ultracode` keyword in this message. */
+    noUltracode?: boolean,
   ) => boolean
   sendCommand: (
     command: string,

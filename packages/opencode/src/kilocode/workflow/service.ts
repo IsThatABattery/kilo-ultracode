@@ -165,7 +165,7 @@ export namespace KiloWorkflow {
         if (typeof ref === "string") {
           const directories = yield* config.directories()
           const found = yield* Effect.promise(() =>
-            WorkflowSaved.find({ directories, directory: ctx.directory, name: ref }),
+            WorkflowSaved.find({ directories, directory: ctx.directory, worktree: ctx.worktree, name: ref }),
           )
           if (!found) return yield* Effect.fail(new Error(`Unknown workflow "${ref}": no saved workflow has that name`))
           return { script: yield* read(found.path), path: found.path }

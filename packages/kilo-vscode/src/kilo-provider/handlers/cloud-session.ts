@@ -13,7 +13,7 @@ import { type ReviewMessageData } from "../../shared/review-comments"
 import { feedbackMetadata, type BrowserFeedbackData } from "../../shared/browser-feedback"
 import { mergeInjected } from "../../shared/injected-prompt"
 import { completesWithoutStatus } from "../command-completion"
-import { ultracodeField, type PromptOptions } from "../prompt-options"
+import { keywordMetadata, ultracodeField, type PromptOptions } from "../prompt-options"
 
 const TIMEOUT = 30_000
 
@@ -238,7 +238,10 @@ export async function handleImportAndSend(
       parts.push({
         type: "text",
         text,
-        metadata: mergeInjected(feedbackMetadata(review, browserFeedback), injectedTitle),
+        metadata: keywordMetadata(
+          mergeInjected(feedbackMetadata(review, browserFeedback), injectedTitle),
+          opts.noUltracode,
+        ),
       })
 
       const editorContext = await ctx.gatherEditorContext()

@@ -138,6 +138,21 @@ type SnapshotPart = {
   synthetic?: boolean
 }
 
+/** Model, agent, and ultracode fields of a message request, from the scope's submission settings. */
+export function sendFields(
+  settings: { model?: { providerID: string; modelID: string }; agent?: string; variant?: string; ultracode?: boolean },
+  noUltracode?: boolean,
+) {
+  return {
+    providerID: settings.model?.providerID,
+    modelID: settings.model?.modelID,
+    agent: settings.agent,
+    variant: settings.variant,
+    ultracode: settings.ultracode,
+    noUltracode,
+  }
+}
+
 export function snapshotProgress(part: SnapshotPart | undefined): boolean {
   if (part?.type !== "text") return false
   if (!part.synthetic) return false

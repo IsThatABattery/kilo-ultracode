@@ -82,6 +82,46 @@ describe("WorkflowSaved.list", () => {
     ])
   })
 
+  test("reads Claude Code's .claude/workflows up to the worktree, after Kilo's folders, and ~/.claude last", async () => {
+    await using tmp = await tmpdir()
+    const outer = path.join(tmp.path, ".claude")
+    const root = path.join(tmp.path, "repo")
+    const sub = path.join(root, "packages", "app")
+    const kilo = path.join(root, ".kilo")
+    const near = path.join(sub, ".claude")
+    const far = path.join(root, ".claude")
+    const home = path.join(Global.Path.home, ".claude")
+    const global = Global.Path.config
+    await put(path.join(outer, "workflows", "outside.js"), script("outside", "above the worktree"))
+    await put(path.join(near, "workflows", "deep.js"), script("deep", "from package .claude"))
+    await put(path.join(far, "workflows", "same.js"), script("same", "from root .claude"))
+    await put(path.join(kilo, "workflows", "same.js"), script("same", "from root .kilo"))
+    const mine = path.join(home, "workflows", "saved-test-claude.js")
+    const user = path.join(home, "workflows", "saved-test-user.js")
+    const own = path.join(global, "workflows", "saved-test-user.js")
+    globals.push(mine, user, own)
+    await put(mine, script("saved-test-claude", "from ~/.claude"))
+    await put(user, script("saved-test-user", "from ~/.claude"))
+    await put(own, script("saved-test-user", "from the global config dir"))
+
+    const items = await WorkflowSaved.list({ directories: [global, kilo], directory: sub, worktree: root })
+    const by = Object.fromEntries(items.map((item) => [item.name, item]))
+    expect(by.deep).toMatchObject({ description: "from package .claude", scope: "project" })
+    expect(by.same).toMatchObject({ description: "from root .kilo", scope: "project" })
+    expect(by["saved-test-claude"]).toMatchObject({ description: "from ~/.claude", scope: "global" })
+    expect(by["saved-test-user"]).toMatchObject({ description: "from the global config dir", scope: "global" })
+    expect(by.outside).toBeUndefined()
+
+    expect(
+      WorkflowSaved.order({ directories: [global, kilo, near, far, home], directory: sub }).map((item) => item.dir),
+    ).toEqual([near, kilo, far, global, home])
+
+    // Without a worktree only the working directory's own .claude is read.
+    const solo = await WorkflowSaved.list({ directories: [], directory: sub })
+    expect(solo.map((item) => item.name)).toContain("deep")
+    expect(solo.map((item) => item.name)).not.toContain("same")
+  })
+
   test("find resolves by meta name, then by file name", async () => {
     await using tmp = await tmpdir()
     const dir = path.join(tmp.path, ".kilo")

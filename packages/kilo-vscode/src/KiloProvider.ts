@@ -152,7 +152,7 @@ import type { PRReviewCommentData, ReviewMessageData } from "./shared/review-com
 import { feedbackMetadata, parseFeedback, type BrowserFeedbackData } from "./shared/browser-feedback"
 import { mergeInjected } from "./shared/injected-prompt"
 import { completesWithoutStatus, goalControl } from "./kilo-provider/command-completion"
-import { flag, ultracodeField, type PromptOptions } from "./kilo-provider/prompt-options"
+import { flag, keywordMetadata, ultracodeField, type PromptOptions } from "./kilo-provider/prompt-options"
 import { routeWorkflowMessage } from "./kilo-provider/workflow"
 import { runningAgents, workflowAgent, workflowBackground } from "./kilo-provider/workflow-run"
 import { KiloProviderMemory } from "./kilo-provider/memory"
@@ -265,6 +265,7 @@ type SendWebviewMessage = {
   agent?: string
   variant?: string
   ultracode?: unknown
+  noUltracode?: unknown
   files?: unknown
   review?: unknown
   browserFeedback?: unknown
@@ -1722,7 +1723,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
             typeof message.commandArgs === "string" ? message.commandArgs : undefined,
             feedback?.browserFeedback,
             typeof message.injectedTitle === "string" ? message.injectedTitle : undefined,
-            { ultracode: flag(message.ultracode) },
+            { ultracode: flag(message.ultracode), noUltracode: flag(message.noUltracode) },
           )
           break
         }
@@ -1817,7 +1818,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       typeof message.contextDirectory === "string" ? message.contextDirectory : undefined,
       feedback?.browserFeedback,
       typeof message.injectedTitle === "string" ? message.injectedTitle : undefined,
-      { ultracode: flag(message.ultracode) },
+      { ultracode: flag(message.ultracode), noUltracode: flag(message.noUltracode) },
     )
   }
 
@@ -4797,7 +4798,10 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       parts.push({
         type: "text",
         text,
-        metadata: mergeInjected(feedbackMetadata(review, browserFeedback), injectedTitle),
+        metadata: keywordMetadata(
+          mergeInjected(feedbackMetadata(review, browserFeedback), injectedTitle),
+          opts.noUltracode,
+        ),
       })
 
       const editorContext = await this.gatherEditorContext(dir)

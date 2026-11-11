@@ -490,6 +490,15 @@
   text-decoration: underline;
 }
 
+/* The `ultracode` keyword while it opts the message in to a workflow. Color and background only: a weight change
+   would shift glyph widths and misalign the overlay with the textarea caret. */
+.prompt-input-ultracode {
+  color: var(--vscode-charts-purple, #b180d7);
+  background-color: color-mix(in srgb, var(--vscode-charts-purple, #b180d7) 15%, transparent);
+  border-radius: 3px;
+  box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--vscode-charts-purple, #b180d7) 30%, transparent);
+}
+
 /* Collapsed large paste. The text is identical to the textarea's placeholder, so
    the overlay stays aligned; only the chip decoration is added here. */
 .prompt-input-paste {

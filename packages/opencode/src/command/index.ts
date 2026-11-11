@@ -179,7 +179,7 @@ const layer = Layer.effect(
       }
 
       // kilocode_change start - apply deferred overrides to their registered source
-      yield* WorkflowSaved.register(commands, { config, flags, directory: ctx.directory }) // saved JS workflows
+      yield* WorkflowSaved.register(commands, { config, flags, directory: ctx.directory, worktree: ctx.worktree }) // saved JS workflows
       for (const item of overrides) {
         const skillTarget = skillName(item.name)
         if (skillTarget) {
