@@ -8,7 +8,7 @@ import { WorkflowJournal } from "../../../src/kilocode/workflow/journal"
 import { WorkflowMeta } from "../../../src/kilocode/workflow/meta"
 import { WorkflowRuntime } from "../../../src/kilocode/workflow/runtime"
 import { WorkflowSandbox } from "../../../src/kilocode/workflow/sandbox"
-import type { Outcome, Ref, RunDetail, RunInfo } from "../../../src/kilocode/workflow/types"
+import type { Outcome, Ref, RunDetail, RunInfo, Tokens } from "../../../src/kilocode/workflow/types"
 import type { TaskPromptOps } from "../../../src/tool/task"
 import { tmpdir } from "../../fixture/fixture"
 
@@ -43,11 +43,15 @@ function launch(input: {
   stagger?: number
   resolve?: (ref: Ref) => Effect.Effect<{ script: string; path: string }, Error>
   warm?: (sessionID: string) => Effect.Effect<void>
+  usage?: (sessionID: string) => Effect.Effect<{ tokens: Tokens; tools: number }>
+  main?: () => Effect.Effect<number>
 }) {
   const id = input.id ?? WorkflowRuntime.id()
   const published: RunInfo[] = []
   const notes: string[] = []
+  const orphans: string[] = []
   const holds = { active: 0, total: 0 }
+  const pool = { main: 0, agents: 0 }
   const run = WorkflowRuntime.make(
     {
       spawn: input.spawn,
@@ -56,6 +60,10 @@ function launch(input: {
       warm: input.warm ?? (() => Effect.never),
       publish: (info) => Effect.sync(() => void published.push(info)),
       notify: (text) => Effect.sync(() => void notes.push(text)),
+      orphan: (text) => Effect.sync(() => void orphans.push(text)),
+      usage:
+        input.usage ?? (() => Effect.succeed({ tokens: { input: 0, output: 0, reasoning: 0, total: 0 }, tools: 0 })),
+      main: input.main ?? (() => Effect.succeed(0)),
       hold: () =>
         Effect.sync(() => {
           holds.active += 1
@@ -74,7 +82,7 @@ function launch(input: {
       parsed: WorkflowMeta.parse(input.script),
       args: input.args,
       total: input.total ?? null,
-      pool: { main: 0, agents: 0 },
+      pool,
       size: "medium",
       ...(input.journal ? { journal: input.journal } : {}),
       concurrency: input.concurrency ?? 4,
@@ -86,7 +94,9 @@ function launch(input: {
     run,
     published,
     notes,
+    orphans,
     holds,
+    pool,
     finished: () => Effect.runPromise(Fiber.join(fiber)),
     /** What disposing the owning instance does: interrupt the run fiber. */
     interrupt: () => Effect.runPromise(Fiber.interrupt(fiber)),
@@ -103,6 +113,9 @@ async function until(check: () => boolean, label: string, ms = 10_000) {
 }
 
 const result = (detail: RunDetail) => JSON.parse(detail.result ?? "null")
+
+const values = (entries?: ReadonlyArray<WorkflowJournal.Entry>) =>
+  entries?.map((item) => (item.type === "result" ? item.value : `pending:${item.index}`))
 
 const meta = (name: string, extra = "") =>
   `export const meta = { name: ${JSON.stringify(name)}, description: "Test ${name}"${extra} }\n`
@@ -335,7 +348,7 @@ describe("WorkflowRuntime", () => {
     expect(started.holds.active).toBe(0)
   })
 
-  test("when its instance goes away the run is persisted and published as stopped, without a notification", async () => {
+  test("when its instance goes away the run is persisted as stopped and the model is told from outside it", async () => {
     await using tmp = await tmpdir()
     const started = launch({
       dir: tmp.path,
@@ -350,8 +363,53 @@ describe("WorkflowRuntime", () => {
     expect(last?.skipped).toBe(1)
     const persisted = await Bun.file(path.join(started.run.dir, "run.json")).json()
     expect(persisted).toMatchObject({ status: "stopped", skipped: 1, pid: process.pid })
+    // Not through the dying instance's notify: through the hand-off, once.
     expect(started.notes).toEqual([])
+    expect(started.orphans).toHaveLength(1)
+    expect(started.orphans[0]).toContain("<status>stopped</status>")
+    expect(started.orphans[0]).toContain(`<result>${WorkflowRuntime.RELOADED}</result>`)
     expect(started.holds.active).toBe(0)
+    expect(started.run.settled()).toBe(true)
+  })
+
+  test("an instance going away after the final notification started sends no second one", async () => {
+    await using tmp = await tmpdir()
+    const id = WorkflowRuntime.id()
+    const notes: string[] = []
+    const orphans: string[] = []
+    const run = WorkflowRuntime.make(
+      {
+        spawn: () => Effect.succeed(ok("x")),
+        sandbox: WorkflowSandbox.start,
+        resolve: () => Effect.fail(new Error("none")),
+        warm: () => Effect.never,
+        publish: () => Effect.void,
+        // The completion notification starts a parent turn that is still running when the instance goes away.
+        notify: (text) => Effect.sync(() => void notes.push(text)).pipe(Effect.andThen(Effect.never)),
+        orphan: (text) => Effect.sync(() => void orphans.push(text)),
+        usage: () => Effect.succeed({ tokens: TOKENS, tools: 0 }),
+        main: () => Effect.succeed(0),
+        hold: () => Effect.succeed(() => undefined),
+      },
+      {
+        id,
+        dir: path.join(tmp.path, id),
+        parent: { sessionID: "ses_parent", messageID: "msg_parent", agent: "code" },
+        ops,
+        script: meta("late") + `return await agent("a")\n`,
+        parsed: WorkflowMeta.parse(meta("late") + `return await agent("a")\n`),
+        args: undefined,
+        total: null,
+        pool: { main: 0, agents: 0 },
+        size: "medium",
+        stagger: 0,
+      },
+    )
+    const fiber = Effect.runFork(run.run)
+    await until(() => notes.length === 1, "completion notification")
+    await Effect.runPromise(Fiber.interrupt(fiber))
+    expect(run.info().status).toBe("completed")
+    expect(orphans).toEqual([])
   })
 
   test("pause lets running agents finish but starts no new ones until resume", async () => {
@@ -387,6 +445,160 @@ describe("WorkflowRuntime", () => {
     expect(started.holds.active).toBe(0)
   })
 
+  test("stop then resume reruns only the agents that were still running", async () => {
+    await using tmp = await tmpdir()
+    const live: string[] = []
+    const hang = { on: true }
+    const spawn: Spawn = (input) =>
+      Effect.gen(function* () {
+        live.push(input.agent.prompt)
+        if (hang.on && input.agent.prompt === "B") return yield* Effect.never
+        return ok(`v:${input.agent.prompt}`)
+      })
+    const script = meta("fanout") + `return await parallel(["A", "B", "C", "D"].map((name) => () => agent(name)))\n`
+    const first = launch({ dir: tmp.path, script, spawn })
+    await until(() => first.run.info().done === 3 && first.run.info().running === 1, "A, C and D done, B running")
+    await Effect.runPromise(first.run.stop())
+    await first.finished()
+    const journal = await Effect.runPromise(WorkflowJournal.load(path.join(first.run.dir, "journal.jsonl")))
+    expect(values(journal)?.toSorted()).toEqual(["pending:1", "v:A", "v:C", "v:D"])
+
+    live.length = 0
+    hang.on = false
+    const second = launch({ dir: tmp.path, id: first.run.id, script, journal, spawn })
+    await second.finished()
+    // Claude Code: "Stopping the whole run doesn't count any agent as failed": only B starts over.
+    expect(live).toEqual(["B"])
+    expect(second.run.info().cached).toBe(3)
+    expect(result(second.run.detail())).toEqual(["v:A", "v:B", "v:C", "v:D"])
+    const rewritten = await Effect.runPromise(WorkflowJournal.load(path.join(second.run.dir, "journal.jsonl")))
+    expect(values(rewritten)?.toSorted()).toEqual(["v:A", "v:B", "v:C", "v:D"])
+  })
+
+  test("a resumed run stages its journal, so a hard kill midway keeps the previous one", async () => {
+    await using tmp = await tmpdir()
+    const spawn: Spawn = (input) =>
+      input.agent.prompt === "two" ? Effect.never : Effect.succeed(ok(`v:${input.agent.prompt}`))
+    const script = meta("staged") + `const a = await agent("one")\nconst b = await agent("two")\nreturn [a, b]\n`
+    const base = [
+      { type: "result" as const, index: 0, key: WorkflowJournal.key("one", {}), label: "one", value: "v:one" },
+      { type: "result" as const, index: 1, key: WorkflowJournal.key("three", {}), label: "three", value: "v:three" },
+    ]
+    const id = WorkflowRuntime.id()
+    const dir = path.join(tmp.path, id)
+    await Bun.write(path.join(dir, "journal.jsonl"), base.map((item) => JSON.stringify(item) + "\n").join(""))
+    const started = launch({ dir: tmp.path, id, script, journal: base, spawn })
+    await until(() => started.run.info().running === 1, "the second agent running")
+    // Mid-run (as after a SIGKILL): the journal still holds every previous result, the staged file this run's.
+    expect(values(await Effect.runPromise(WorkflowJournal.load(path.join(dir, "journal.jsonl"))))).toEqual([
+      "v:one",
+      "v:three",
+    ])
+    await until(() => Bun.file(path.join(dir, WorkflowJournal.STAGED)).size > 0, "staged cache hit")
+    expect(values(await Effect.runPromise(WorkflowJournal.load(path.join(dir, WorkflowJournal.STAGED))))).toEqual([
+      "v:one",
+    ])
+    await Effect.runPromise(started.run.stop())
+    await started.finished()
+    expect(await Bun.file(path.join(dir, WorkflowJournal.STAGED)).exists()).toBe(false)
+    expect(values(await Effect.runPromise(WorkflowJournal.load(path.join(dir, "journal.jsonl"))))).toEqual([
+      "v:one",
+      "pending:1",
+      "v:three",
+    ])
+  })
+
+  test("a stopped run is not settled until its agents exited", async () => {
+    await using tmp = await tmpdir()
+    const exit = Deferred.makeUnsafe<void>()
+    const started = launch({
+      dir: tmp.path,
+      script: meta("slow-stop") + `return await agent("a")\n`,
+      spawn: () => Effect.never.pipe(Effect.onInterrupt(() => Deferred.await(exit))),
+    })
+    await until(() => started.run.info().running === 1, "a running agent")
+    expect(started.run.settled()).toBe(false)
+    const stopping = Effect.runPromise(started.run.stop())
+    await until(() => started.run.info().status === "stopped", "stopped status")
+    expect(started.run.settled()).toBe(false)
+    Deferred.doneUnsafe(exit, Effect.void)
+    await stopping
+    await started.finished()
+    expect(started.run.settled()).toBe(true)
+  })
+
+  test("tokens of interrupted agents still count toward the run and budget.spent()", async () => {
+    await using tmp = await tmpdir()
+    const started = launch({
+      dir: tmp.path,
+      script: meta("interrupted") + `return await parallel([() => agent("slow"), () => agent("fast")])\n`,
+      spawn: (input) =>
+        input.agent.prompt === "slow"
+          ? Effect.sync(() => input.onSession?.("ses_slow")).pipe(Effect.andThen(Effect.never))
+          : Effect.succeed(ok("fast")),
+      usage: (sessionID) =>
+        Effect.succeed({
+          tokens: sessionID === "ses_slow" ? { input: 1, output: 30, reasoning: 4, total: 40 } : TOKENS,
+          tools: 2,
+        }),
+    })
+    await until(
+      () => started.run.detail().list.some((item) => item.label === "slow" && item.sessionID === "ses_slow"),
+      "slow agent session",
+    )
+    await Effect.runPromise(started.run.skip("a0"))
+    await started.finished()
+    const detail = started.run.detail()
+    expect(detail.list[0]).toMatchObject({ status: "skipped", tokens: 40, tools: 2 })
+    expect(detail.tokens).toBe(55)
+    expect(started.pool.agents).toBe(34 + 10)
+  })
+
+  test("budget.spent() picks up main-loop tokens spent after launch", async () => {
+    await using tmp = await tmpdir()
+    const gate = Deferred.makeUnsafe<void>()
+    const main = { value: 0 }
+    const started = launch({
+      dir: tmp.path,
+      total: 1000,
+      script:
+        meta("main") +
+        `await agent("first")\n` +
+        `const err = await agent("second").catch((e) => e.message)\n` +
+        `return { err, spent: budget.spent() }\n`,
+      main: () => Effect.sync(() => main.value),
+      spawn: (input) =>
+        input.agent.prompt === "first"
+          ? Deferred.await(gate).pipe(Effect.as(ok("x", { input: 0, output: 0, reasoning: 0, total: 0 })))
+          : Effect.succeed(ok("never")),
+    })
+    await until(() => started.run.info().running === 1, "first agent running")
+    // The main loop keeps answering after launching the workflow.
+    main.value = 1200
+    await until(() => started.pool.main === 1200, "main-loop refresh", 10_000)
+    Deferred.doneUnsafe(gate, Effect.void)
+    await started.finished()
+    const value = result(started.run.detail())
+    expect(value.err).toContain("Token budget exhausted")
+    expect(value.spent).toBe(1200)
+  })
+
+  test("agent() rejects non-string label and phase options before counting the agent", async () => {
+    await using tmp = await tmpdir()
+    const started = launch({
+      dir: tmp.path,
+      script:
+        meta("types") +
+        `const errors = []\n` +
+        `for (const opts of [{ label: 5 }, { phase: 2 }]) await agent("x", opts).catch((e) => errors.push(e.message))\n` +
+        `return errors\n`,
+      spawn: () => Effect.succeed(ok("never")),
+    })
+    await started.finished()
+    expect(result(started.run.detail())).toEqual(["opts.label must be a string", "opts.phase must be a string"])
+    expect(started.run.info()).toMatchObject({ agents: 0, phases: [] })
+  })
+
   test("stopping one agent hands the script null and skips the journal", async () => {
     await using tmp = await tmpdir()
     const started = launch({
@@ -404,7 +616,7 @@ describe("WorkflowRuntime", () => {
     expect(result(detail)).toEqual([null, "fast"])
     expect(detail.list[0].status).toBe("skipped")
     const journal = await Effect.runPromise(WorkflowJournal.load(path.join(started.run.dir, "journal.jsonl")))
-    expect(journal?.map((item) => item.value)).toEqual(["fast"])
+    expect(values(journal)).toEqual(["fast"])
     expect(await Effect.runPromise(started.run.skip("a0"))).toBe(false)
   })
 
@@ -438,7 +650,7 @@ describe("WorkflowRuntime", () => {
     expect(detail.cached).toBe(1)
     const rewritten = await Effect.runPromise(WorkflowJournal.load(path.join(second.run.dir, "journal.jsonl")))
     // The replaced call's earlier result is kept as well, for a resume that reverts the edit.
-    expect(rewritten?.map((item) => item.value).toSorted()).toEqual(["v:one", "v:three", "v:two", "v:two (edited)"])
+    expect(values(rewritten)?.toSorted()).toEqual(["v:one", "v:three", "v:two", "v:two (edited)"])
 
     // Same script again: every call replays.
     live.length = 0
@@ -475,8 +687,9 @@ describe("WorkflowRuntime", () => {
     await Effect.runPromise(second.run.stop())
     await second.finished()
     const kept = await Effect.runPromise(WorkflowJournal.load(file(second.run.dir)))
-    expect(kept?.map((item) => item.value)).toEqual(["v:one", "v:two", "v:three"])
-    expect(kept?.map((item) => item.index)).toEqual([0, 1, 2])
+    // The edited call was still running when the run stopped: it is pending, the original "two" is kept after it.
+    expect(values(kept)).toEqual(["v:one", "pending:1", "v:two", "v:three"])
+    expect(kept?.map((item) => item.index)).toEqual([0, 1, 2, 3])
 
     // The original script resumes entirely from cache.
     live.length = 0

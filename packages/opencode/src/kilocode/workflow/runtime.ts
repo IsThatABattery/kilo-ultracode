@@ -17,7 +17,19 @@ import { WorkflowJournal } from "./journal"
 import { WorkflowMeta } from "./meta"
 import type { WorkflowSandbox } from "./sandbox"
 import { WorkflowSpawn } from "./spawn"
-import type { AgentInfo, AgentOpts, Call, Outcome, PhaseInfo, Ref, RunDetail, RunInfo, Size, Status } from "./types"
+import type {
+  AgentInfo,
+  AgentOpts,
+  Call,
+  Outcome,
+  PhaseInfo,
+  Ref,
+  RunDetail,
+  RunInfo,
+  Size,
+  Status,
+  Tokens,
+} from "./types"
 
 const log = Log.create({ service: "workflow.runtime" })
 
@@ -28,6 +40,8 @@ export namespace WorkflowRuntime {
   export const RESULT_LIMIT = 20_000
   /** Progress snapshots are published at most this often (≤4/s); status changes publish immediately. */
   export const TICK = 250
+  /** Ticks between refreshes of the main loop's share of budget.spent() (runs with a budget only). */
+  const REFRESH = 8
   const PREVIEW = 2000
   const LOGS = 1000
 
@@ -45,6 +59,9 @@ export namespace WorkflowRuntime {
     if (raw && Number.isFinite(value) && value >= 0) return value
     return 5000
   }
+
+  /** Shape of every run id (see `id`). */
+  export const ID = /^wf_[0-9a-f]{8}-[0-9a-f]{3}$/
 
   /** Run id: `wf_<8 hex>-<3 hex>`. */
   export function id() {
@@ -71,8 +88,17 @@ export namespace WorkflowRuntime {
     publish: (info: RunInfo) => Effect.Effect<void>
     /** Inject a <task-notification> into the launching session. */
     notify: (text: string) => Effect.Effect<void>
+    /**
+     * Deliver the stopped notification of a run whose instance went away (a server reload): the session is still
+     * there, but the run's own instance is not, so this must not block and must not run in that instance.
+     */
+    orphan: (text: string) => Effect.Effect<void>
     /** Keep the launching session busy (SessionDrain.hold); returns the release. */
     hold: () => Effect.Effect<() => void>
+    /** Token ledger of a child session, for agents interrupted before they reported their outcome. */
+    usage: (sessionID: string) => Effect.Effect<{ tokens: Tokens; tools: number }>
+    /** Main-loop output tokens spent so far this turn (the launch value is only a snapshot). */
+    main: () => Effect.Effect<number>
   }
 
   export type Input = {
@@ -105,6 +131,8 @@ export namespace WorkflowRuntime {
     readonly run: Effect.Effect<void>
     /** Completes once the run reached a terminal status and wrote its files (before the notification). */
     readonly done: Effect.Effect<void>
+    /** True once `done` completed: every agent has exited and the journal is final, so the run may be relaunched. */
+    settled(): boolean
     stop(): Effect.Effect<void>
     pause(): Effect.Effect<void>
     resume(): Effect.Effect<void>
@@ -135,7 +163,7 @@ export namespace WorkflowRuntime {
 
   /** Display label: opts.label, else the first 40 characters of the prompt, else `agent-<index>`. */
   export function label(prompt: string, opts: AgentOpts, index: number) {
-    if (opts.label && opts.label.trim()) return opts.label
+    if (typeof opts.label === "string" && opts.label.trim()) return opts.label
     return prompt.replace(/\s+/g, " ").trim().slice(0, 40) || `agent-${index}`
   }
 
@@ -152,8 +180,12 @@ export namespace WorkflowRuntime {
       "Paused by the user: agents already running finish, but no new agent() calls start until the run is resumed from /workflows.",
   }
 
+  /** Why a run stopped when its instance was disposed (config change, provider login, ...) rather than by the user. */
+  export const RELOADED =
+    "Stopped because the Kilo server reloaded (for example after a settings change) before the script finished. Agents still running were stopped; resume with resumeFromRunId to replay the ones that completed."
+
   /** The <task-notification> injected into the launching session when a run completes, fails, stops or pauses. */
-  export function notification(detail: RunDetail, input: { empty: number; now: number }) {
+  export function notification(detail: RunDetail, input: { empty: number; now: number; note?: string }) {
     const status = detail.status === "running" ? "completed" : detail.status
     const output = path.join(detail.dir, "output.json")
     const raw =
@@ -161,7 +193,7 @@ export namespace WorkflowRuntime {
         ? (detail.error_message ?? "")
         : status === "completed"
           ? (detail.result ?? "")
-          : (NOTE[status] ?? "")
+          : (input.note ?? NOTE[status] ?? "")
     const result =
       raw.length > RESULT_LIMIT
         ? `${raw.slice(0, RESULT_LIMIT)}... (truncated ${raw.length - RESULT_LIMIT} chars, full result in ${output})`
@@ -209,6 +241,10 @@ export namespace WorkflowRuntime {
       dirty: false,
       stale: false,
       ticks: 0,
+      /** Set once the whole run is stopping: agents interrupted from then on are journaled as pending. */
+      halting: false,
+      /** Set once the final notification was handed off, so a later interrupt never sends a second one. */
+      notified: false,
       release: undefined as (() => void) | undefined,
       bridge: undefined as EffectBridge.Shape | undefined,
     }
@@ -225,7 +261,10 @@ export namespace WorkflowRuntime {
     // run.json writes never overlap, so a periodic save can't land after the final one.
     const saving = Semaphore.makeUnsafe(1)
     const replay = WorkflowJournal.replay(input.journal ?? [])
-    const journal = WorkflowJournal.writer(path.join(input.dir, WorkflowJournal.FILE))
+    // A resumed run stages its journal, so a hard kill midway leaves the previous one intact (see WorkflowJournal).
+    const journal = WorkflowJournal.writer(path.join(input.dir, WorkflowJournal.FILE), {
+      staged: input.journal !== undefined,
+    })
     const finished = Deferred.makeUnsafe<void>()
 
     const mark = () => {
@@ -317,10 +356,20 @@ export namespace WorkflowRuntime {
       }),
     )
 
+    /** Fold the main loop's tokens since launch into budget.spent(); only a budget ceiling depends on them. */
+    const refresh = Effect.gen(function* () {
+      if (input.total === null || terminal(state.status)) return
+      const main = yield* deps.main().pipe(Effect.catchCause(() => Effect.succeed(0)))
+      if (main <= input.pool.main) return
+      input.pool.main = main
+      push()
+    })
+
     const tick = Effect.gen(function* () {
       state.ticks += 1
       if (state.dirty) yield* publish
       if (state.stale && state.ticks % 4 === 0) yield* save
+      if (state.ticks % REFRESH === 0) yield* refresh
     })
 
     const notify = (text: string) =>
@@ -331,6 +380,32 @@ export namespace WorkflowRuntime {
             Effect.sync(() => log.error("failed to deliver workflow notification", { run: input.id, cause })),
           ),
         )
+
+    /** The final notification: sent at most once per run. */
+    const announce = (deliver: (text: string) => Effect.Effect<void>, note?: string) =>
+      Effect.suspend(() => {
+        if (state.notified) return Effect.void
+        state.notified = true
+        return deliver(notification(detail(), { empty: blank.size, now: Date.now(), ...(note ? { note } : {}) }))
+      })
+
+    /** Tokens of an agent interrupted before it reported an outcome still count toward the run and the budget. */
+    const fold = (item: AgentInfo) =>
+      Effect.suspend(() => {
+        const id = item.sessionID
+        if (!id) return Effect.void
+        return deps.usage(id).pipe(
+          Effect.map((spent) => {
+            item.tokens = spent.tokens.total
+            item.tools = spent.tools
+            input.pool.agents += spent.tokens.output + spent.tokens.reasoning
+            push()
+          }),
+          Effect.catchCause((cause) =>
+            Effect.sync(() => log.warn("failed to read interrupted workflow agent usage", { agent: item.id, cause })),
+          ),
+        )
+      })
 
     const settle = (item: AgentInfo, key: string, outcome: Outcome) =>
       Effect.gen(function* () {
@@ -424,10 +499,14 @@ export namespace WorkflowRuntime {
         )
       }).pipe(
         Effect.onInterrupt(() =>
-          Effect.sync(() => {
+          Effect.gen(function* () {
             item.status = "skipped"
             item.ended = Date.now()
             mark()
+            yield* fold(item)
+            // Stopping the whole run counts no agent as failed: on resume this one starts over, while the agents
+            // after it still replay. Stopping just this agent (skip) records nothing, so a resume reruns from here.
+            if (state.halting) yield* journal.append({ type: "pending", index: item.index, key })
           }),
         ),
         Effect.catchDefect((defect) =>
@@ -576,12 +655,13 @@ export namespace WorkflowRuntime {
 
     /** Stop everything still in flight (script sandboxes first, so no new agent() calls start). */
     const halt = Effect.suspend(() => {
+      state.halting = true
       for (const box of boxes) box.terminate()
       return Fiber.interruptAll([...live.values()])
     })
 
-    /** A resumed run keeps the previous journal's results it never reached, for the next resume. */
-    const keep = journal.restore(input.journal ?? [])
+    /** A resumed run keeps the previous journal's results it never reached, then replaces the journal with its own. */
+    const keep = journal.restore(input.journal ?? []).pipe(Effect.andThen(journal.commit()))
 
     const finish = (result: WorkflowSandbox.Result) =>
       Effect.gen(function* () {
@@ -605,7 +685,7 @@ export namespace WorkflowRuntime {
         })
         yield* publish
         yield* Deferred.succeed(finished, undefined)
-        yield* notify(notification(detail(), { empty: blank.size, now: Date.now() }))
+        yield* announce(notify)
       })
 
     const run = Effect.gen(function* () {
@@ -633,7 +713,8 @@ export namespace WorkflowRuntime {
       Effect.scoped,
       Effect.onInterrupt(() =>
         Effect.gen(function* () {
-          // The owning instance went away: record and publish what happened, but there is no session left to notify.
+          // The owning instance went away (a server reload), the session did not: record and publish what
+          // happened, then tell the model from outside this instance.
           yield* halt
           yield* keep
           if (!terminal(state.status)) state.status = "stopped"
@@ -641,6 +722,17 @@ export namespace WorkflowRuntime {
           yield* save
           yield* publish
           yield* Deferred.succeed(finished, undefined)
+          yield* announce(
+            (text) =>
+              deps
+                .orphan(text)
+                .pipe(
+                  Effect.catchCause((cause) =>
+                    Effect.sync(() => log.error("failed to hand off workflow notification", { run: input.id, cause })),
+                  ),
+                ),
+            RELOADED,
+          )
         }),
       ),
       Effect.catchCause((cause) =>
@@ -656,7 +748,7 @@ export namespace WorkflowRuntime {
               yield* save
               yield* publish
               yield* Deferred.succeed(finished, undefined)
-              yield* notify(notification(detail(), { empty: blank.size, now: Date.now() }))
+              yield* announce(notify)
             }),
       ),
       Effect.ensuring(Effect.sync(release)),
@@ -708,6 +800,7 @@ export namespace WorkflowRuntime {
       detail,
       run,
       done: Deferred.await(finished),
+      settled: () => Deferred.isDoneUnsafe(finished),
       stop,
       pause,
       resume,

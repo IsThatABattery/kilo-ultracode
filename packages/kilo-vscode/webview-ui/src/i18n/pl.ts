@@ -1449,6 +1449,15 @@ export const dict = {
   "workflow.agent.status.error": "Niepowodzenie",
   "workflow.agent.status.skipped": "Pominięty",
   "workflow.agent.status.cached": "Z pamięci podręcznej",
+  "prompt.workflows.command": "Śledź postęp przepływu pracy (otwórz ostatnie uruchomienie)",
+  "workflow.none": "Brak uruchomień przepływów pracy w tej sesji",
+  "workflow.large": "Duży przepływ pracy",
+  "ui.permission.toolLabel.workflow": "Przepływ pracy",
+  "ui.permission.workflow.phases": "Fazy:",
+  "ui.permission.workflow.caution":
+    "Przepływ pracy może uruchomić wielu agentów i zużyć znacznie więcej tokenów niż zwykła tura.",
+  "settings.autoApprove.tool.workflow":
+    "Uruchamianie dynamicznych przepływów pracy. Pozwala uruchomić skrypt przepływu pracy, który w tle koordynuje wielu podagentów.",
   "settings.saveBar.unsavedChanges": "Niezapisane zmiany",
   "settings.saveBar.discard": "Odrzuć",
   "settings.saveBar.save": "Zapisz",

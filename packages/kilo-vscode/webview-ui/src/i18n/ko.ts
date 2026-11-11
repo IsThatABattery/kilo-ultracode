@@ -1418,6 +1418,15 @@ export const dict = {
   "workflow.agent.status.error": "실패",
   "workflow.agent.status.skipped": "건너뜀",
   "workflow.agent.status.cached": "캐시됨",
+  "prompt.workflows.command": "워크플로 진행 상황 보기 (최근 실행 열기)",
+  "workflow.none": "이 세션에는 워크플로 실행이 없습니다",
+  "workflow.large": "대규모 워크플로",
+  "ui.permission.toolLabel.workflow": "워크플로",
+  "ui.permission.workflow.phases": "단계:",
+  "ui.permission.workflow.caution":
+    "워크플로는 많은 에이전트를 실행하며 일반 턴보다 훨씬 많은 토큰을 사용할 수 있습니다.",
+  "settings.autoApprove.tool.workflow":
+    "동적 워크플로 시작. 백그라운드에서 여러 하위 에이전트를 조율하는 워크플로 스크립트 실행을 허용합니다.",
   "settings.saveBar.unsavedChanges": "저장되지 않은 변경 사항",
   "settings.saveBar.discard": "취소",
   "settings.saveBar.save": "저장",

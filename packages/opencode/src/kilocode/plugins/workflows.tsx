@@ -1,6 +1,10 @@
 import type { PermissionRequest } from "@kilocode/sdk/v2"
 import type { TuiPlugin, TuiPluginApi, TuiPluginModule } from "@kilocode/plugin/tui"
-import { createEffect, createMemo, createSignal, For, on, Show, type Accessor } from "solid-js"
+import { createEffect, createMemo, createSignal, For, on, onCleanup, Show, type Accessor } from "solid-js"
+import { useSDK } from "@tui/context/sdk"
+import { KiloInstance } from "@tui/kilocode/instance"
+import { UltracodeKeyword } from "@tui/kilocode/ultracode-keyword"
+import { KILO_BASE_MODE } from "@tui/keymap"
 import {
   DialogWorkflowRun,
   DialogWorkflows,
@@ -17,15 +21,7 @@ const AGENT = "kilo.workflow"
 
 /** Ultracode reminders go to root sessions only, so a child session's toggle and indicator act on its root. */
 export function root(api: Pick<TuiPluginApi, "state">, sessionID: string) {
-  const seen = new Set<string>()
-  let current = sessionID
-  while (!seen.has(current)) {
-    seen.add(current)
-    const parent = api.state.session.get(current)?.parentID
-    if (!parent) return current
-    current = parent
-  }
-  return current
+  return WorkflowView.root((id) => api.state.session.get(id)?.parentID, sessionID)
 }
 
 /** The `workflow` permission prompt: the script's meta name, description and phases, never the script itself. */
@@ -44,6 +40,82 @@ export function permission(request: Pick<PermissionRequest, "metadata" | "patter
     title: name ? `Run workflow "${name}"` : "Run workflow",
     lines: [...(description ? [description] : []), ...(phases.length ? [`Phases: ${phases.join(" · ")}`] : [])],
   }
+}
+
+/**
+ * The script a `workflow` permission would run, for "View raw script": the file it was read from (scriptPath or a
+ * saved workflow), else the inline script of the pending tool call. The ask metadata never carries inline text.
+ */
+export function source(
+  api: Pick<TuiPluginApi, "state">,
+  request: Pick<PermissionRequest, "metadata" | "tool">,
+): { file?: string; script?: string } {
+  const file = request.metadata.script
+  if (typeof file === "string" && file) return { file }
+  const tool = request.tool
+  if (!tool) return {}
+  const part = api.state.part(tool.messageID).find((item) => item.type === "tool" && item.callID === tool.callID)
+  const script = part?.type === "tool" ? part.state.input?.script : undefined
+  return typeof script === "string" && script ? { script } : {}
+}
+
+/** Permission body: description and phases, then the script source, kept collapsed until `v` or a click opens it. */
+function Permission(props: { api: TuiPluginApi; request: PermissionRequest; lines: string[] }) {
+  const theme = () => props.api.theme.current
+  const raw = createMemo(() => source(props.api, props.request))
+  const [open, setOpen] = createSignal(false)
+  const toggle = () => setOpen((value) => raw().script !== undefined && !value)
+  onCleanup(
+    props.api.keymap.registerLayer({
+      mode: KILO_BASE_MODE,
+      bindings: [{ key: "v", desc: "View raw workflow script", group: "Permission", cmd: toggle }],
+    }),
+  )
+  return (
+    <box paddingLeft={1} flexDirection="column" flexShrink={1}>
+      <For each={props.lines}>
+        {(line) => (
+          <text fg={theme().textMuted} wrapMode="word">
+            {line}
+          </text>
+        )}
+      </For>
+      <Show when={raw().file}>
+        {(file) => (
+          <text fg={theme().textMuted} wrapMode="word">
+            Script: {file()}
+          </text>
+        )}
+      </Show>
+      <Show when={raw().script}>
+        {(script) => (
+          <>
+            <box flexDirection="row" gap={1} onMouseUp={toggle}>
+              <text fg={theme().text}>v</text>
+              <text fg={theme().textMuted}>{open() ? "hide raw script" : "view raw script"}</text>
+            </box>
+            <Show when={open()}>
+              <scrollbox flexShrink={1} flexGrow={1} minHeight={3} paddingTop={1}>
+                <text fg={theme().text}>{script()}</text>
+              </scrollbox>
+            </Show>
+          </>
+        )}
+      </Show>
+    </box>
+  )
+}
+
+/** Refetches workflow capabilities when the SSE stream (re)connects to a possibly restarted server. */
+export function Reconnect(props: { refresh: () => Promise<void> }) {
+  const sdk = useSDK()
+  // `api.event` drops `server.connected`: it carries no directory or project, so read the raw stream.
+  onCleanup(
+    sdk.event.on("event", (event) => {
+      if (event.payload.type === "server.connected") void props.refresh()
+    }),
+  )
+  return null
 }
 
 function session(api: TuiPluginApi) {
@@ -103,6 +175,11 @@ function Sidebar(props: { api: TuiPluginApi; sessionID: string }) {
   const list = createMemo(() => data.runs().filter((run) => WorkflowView.active(run.status)))
   const now = useNow(() => list().length > 0)
   const open = (runID: string) => props.api.ui.dialog.replace(() => <DialogWorkflowRun runID={runID} />)
+  const large = (run: Parameters<typeof WorkflowView.large>[0] & { sessionID: string }) =>
+    WorkflowView.large(run, {
+      configured: props.api.state.config.experimental?.workflow_size,
+      ultracode: ultracode(props.api, root(props.api, run.sessionID)),
+    })
 
   return (
     <Show when={list().length > 0}>
@@ -112,11 +189,16 @@ function Sidebar(props: { api: TuiPluginApi; sessionID: string }) {
         </text>
         <For each={list()}>
           {(run) => (
-            <text fg={theme().textMuted} onMouseUp={() => open(run.id)}>
-              <span style={{ fg: WorkflowView.paint(theme(), WorkflowView.runTone(run.status)) }}>●</span> {run.name}
-              {"  "}
-              {WorkflowView.summary(run, now())}
-            </text>
+            <box onMouseUp={() => open(run.id)}>
+              <text fg={theme().textMuted}>
+                <span style={{ fg: WorkflowView.paint(theme(), WorkflowView.runTone(run.status)) }}>●</span> {run.name}
+                {"  "}
+                {WorkflowView.summary(run, now())}
+              </text>
+              <Show when={large(run)}>
+                <text fg={theme().warning}>{WorkflowView.LARGE}</text>
+              </Show>
+            </box>
           )}
         </For>
       </box>
@@ -130,29 +212,25 @@ const tui: TuiPlugin = async (api) => {
   // Workflows can be off by config or KILO_DISABLE_WORKFLOWS; only the server knows, so ask its capabilities.
   const refresh = async () => {
     const result = await api.client.experimental.capabilities.get().catch(() => undefined)
-    setAvailable(result?.data?.workflows === true)
+    const value = result?.data?.workflows === true
+    setAvailable(value)
+    UltracodeKeyword.report(value)
   }
   void refresh()
-  api.lifecycle.onDispose(api.event.on("server.instance.disposed", () => void refresh()))
-  // A (re)connected server may have restarted with a different KILO_DISABLE_WORKFLOWS or config.
-  api.lifecycle.onDispose(api.event.on("server.connected", () => void refresh()))
+  api.lifecycle.onDispose(() => UltracodeKeyword.report(false))
+  // A reload of this directory's instance may follow a config change; worktree agents dispose other directories.
+  api.lifecycle.onDispose(
+    api.event.on("server.instance.disposed", (evt) => {
+      if (KiloInstance.own(evt.properties.directory, api.state.path.directory)) void refresh()
+    }),
+  )
 
   MemoryPermissionRegistry.register("workflow", (request) => {
     const info = permission(request)
     return {
       icon: "◆",
       title: info.title,
-      body: (
-        <box paddingLeft={1} flexDirection="column">
-          <For each={info.lines}>
-            {(line) => (
-              <text fg={api.theme.current.textMuted} wrapMode="word">
-                {line}
-              </text>
-            )}
-          </For>
-        </box>
-      ),
+      body: <Permission api={api} request={request} lines={info.lines} />,
     }
   })
 
@@ -220,6 +298,10 @@ const tui: TuiPlugin = async (api) => {
   api.slots.register({
     order: 52,
     slots: {
+      // A (re)connected server may have restarted with a different KILO_DISABLE_WORKFLOWS or config.
+      app() {
+        return <Reconnect refresh={refresh} />
+      },
       session_prompt_right(_ctx, props) {
         return <Indicator api={api} sessionID={props.session_id} available={available} refresh={refresh} />
       },

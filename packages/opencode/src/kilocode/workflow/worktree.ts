@@ -55,9 +55,9 @@ export namespace WorkflowWorktree {
     if (ctx.project.vcs !== "git") return yield* Effect.fail(NOT_GIT)
     const git = yield* Git.Service
     const worktree = yield* Worktree.Service
+    // Precheck only: HEAD can move before the worktree is added, so the base is read from the worktree itself.
     const head = yield* git.run(["rev-parse", "HEAD"], { cwd: ctx.worktree })
     if (head.exitCode !== 0) return yield* Effect.fail(`${NOT_GIT} with at least one commit`)
-    const base = head.text().trim()
 
     // `git worktree add` is brief and leaves a registered worktree behind, so it is not interrupted midway.
     const started = yield* lock
@@ -67,14 +67,16 @@ export namespace WorkflowWorktree {
           // Subscribe before creating: boot runs forked and can report readiness at any point after.
           const wait = listen(info.directory)
           yield* worktree.createFromInfo(info).pipe(Effect.onError(() => Effect.sync(wait.off)))
-          return { info, wait }
+          // HEAD is set right away, even though the checkout itself runs later (--no-checkout).
+          const made = yield* git.run(["rev-parse", "HEAD"], { cwd: info.directory })
+          return { info, wait, base: made.exitCode === 0 ? made.text().trim() : head.text().trim() }
         }),
       )
       .pipe(
         Effect.uninterruptible,
         Effect.mapError((err) => (err._tag === "WorktreeNotGitError" ? NOT_GIT : `worktree: ${err.message}`)),
       )
-    const handle = { path: started.info.directory, main: ctx.worktree, base } satisfies Handle
+    const handle = { path: started.info.directory, main: ctx.worktree, base: started.base } satisfies Handle
 
     const failure = yield* Effect.promise(() => started.wait.promise).pipe(
       Effect.timeoutOrElse({

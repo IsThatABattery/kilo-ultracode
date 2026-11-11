@@ -4,15 +4,18 @@
 // sandbox inheritance, drain linking, cost propagation) but returns the agent's raw final text, or
 // with `opts.schema` its locally validated StructuredOutput value, re-prompting on a miss.
 
+import path from "path"
 import { Cause, Effect, Exit, Result } from "effect"
 import * as Log from "@opencode-ai/core/util/log"
 import { Database } from "@opencode-ai/core/database/database"
+import { Global } from "@opencode-ai/core/global"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
 import { Agent } from "@/agent/agent"
 import { deriveSubagentSessionPermission } from "@/agent/subagent-permissions"
 import { Config } from "@/config/config"
 import { InstanceState } from "@/effect/instance-state"
 import { Git } from "@/git"
+import { Permission } from "@/permission"
 import { InstanceStore } from "@/project/instance-store"
 import { Project } from "@/project/project"
 import { Provider } from "@/provider/provider"
@@ -74,6 +77,9 @@ export namespace WorkflowSpawn {
    * as a non-terminal error instead.
    */
   export function check(opts: AgentOpts): string | undefined {
+    // label and phase end up in run summaries (RunInfo/AgentInfo/PhaseInfo), which only carry strings.
+    if (opts.label !== undefined && typeof opts.label !== "string") return "opts.label must be a string"
+    if (opts.phase !== undefined && typeof opts.phase !== "string") return "opts.phase must be a string"
     if (opts.agentType !== undefined && !text(opts.agentType)) return "opts.agentType must be a non-empty string"
     if (opts.model !== undefined && !text(opts.model)) return "opts.model must be a non-empty string"
     if (opts.effort !== undefined && typeof opts.effort !== "string") return "opts.effort must be a string"
@@ -83,7 +89,7 @@ export namespace WorkflowSpawn {
   }
 
   /** Sum of the session's step-finish token ledger, and its tool calls. */
-  const usage = Effect.fnUntraced(function* (sessions: Session.Interface, id: SessionID) {
+  export const usage = Effect.fnUntraced(function* (sessions: Pick<Session.Interface, "messages">, id: SessionID) {
     const messages = yield* sessions.messages({ sessionID: id }).pipe(Effect.catch(() => Effect.succeed([])))
     const parts = messages.flatMap((message) => message.parts)
     const tokens = parts.reduce((sum, part) => {
@@ -175,9 +181,21 @@ export namespace WorkflowSpawn {
         const next = yield* agents.get(name)
         if (!next) return fail(`Unknown agent type: ${name} is not a valid agent type`)
         if (next.mode === "primary") return fail(`Agent "${name}" is a primary agent and cannot be used as a subagent`)
+        // Fail closed like the Task tool: the launching agent's rules are the ceiling every agent inherits.
+        const caller = yield* agents.get(input.parent.agent)
+        if (!caller) return fail(`launching agent "${input.parent.agent}" is no longer available`)
 
         const cfg = yield* config.get()
         const parent = yield* sessions.get(parentID).pipe(Effect.orDie)
+        // The Task tool asks `task` for every subagent type; a type the launching agent or session denies stays
+        // denied here. Approving the workflow covers "ask". The default subagent is exempt: primaries deny it on
+        // purpose so it is reachable only through workflows.
+        if (
+          name !== AGENT &&
+          Permission.evaluate("task", name, caller.permission, parent.permission ?? []).action === "deny"
+        ) {
+          return fail(`Agent type "${name}" is denied by the launching agent's task permission`)
+        }
         const source = yield* origin(parent, MessageID.make(input.parent.messageID))
         if (!source) return fail("cannot resolve the launching session's model")
 
@@ -210,13 +228,18 @@ export namespace WorkflowSpawn {
         const full = yield* provider
           .getModel(model.providerID, model.modelID)
           .pipe(Effect.catch(() => Effect.succeed(undefined)))
-        // An explicit effort maps onto this model's own variant keys (none fitting → provider default).
+        const keys = Object.keys(full?.variants ?? {})
+        // An explicit effort maps onto this model's own variant keys (none fitting → provider default). Without
+        // one the agent inherits the session effort, also when opts.model swaps the model (mapped onto its keys).
         const variant = WorkflowEffort.valid(opts.effort)
-          ? WorkflowEffort.pick(opts.effort, Object.keys(full?.variants ?? {}))
-          : selected.value.variant
+          ? WorkflowEffort.pick(opts.effort, keys)
+          : opts.model && !warning && source.variant !== undefined
+            ? keys.includes(source.variant)
+              ? source.variant
+              : WorkflowEffort.pick(source.variant, keys)
+            : selected.value.variant
 
-        const caller = yield* agents.get(input.parent.agent)
-        const rules = KiloTask.inherited({ caller: caller ?? next, session: parent, mcp: cfg.mcp })
+        const rules = KiloTask.inherited({ caller, session: parent, mcp: cfg.mcp })
         const permission = KiloTask.merge(
           deriveSubagentSessionPermission({ parentSessionPermission: parent.permission ?? [], subagent: next }),
           (cfg.experimental?.primary_tools ?? []).map((item) => ({
@@ -225,6 +248,14 @@ export namespace WorkflowSpawn {
             action: "deny" as const,
           })),
           KiloTask.permissions(rules, false),
+          // Run files (scripts, journals that resumes replay as cached results) are the launching session's own.
+          [
+            {
+              permission: "external_directory",
+              pattern: path.join(Global.Path.data, "workflow", "*"),
+              action: "deny" as const,
+            },
+          ],
         )
 
         const schema = opts.schema
@@ -246,13 +277,13 @@ export namespace WorkflowSpawn {
           // Agents with a catch-all deny would otherwise lose the tool their answer depends on.
           ...(structured ? { [WorkflowPrompts.STRUCTURED_OUTPUT_TOOL]: true } : {}),
         }
+        const sent = schema && full ? WorkflowSchema.portable(full, schema) : schema
+        // Provider sanitising can retype values (Gemini turns numeric enums into string enums); the model can then
+        // only answer in the sent shape, so validation coerces back to the script's original schema.
+        const coerce = schema !== undefined && JSON.stringify(sent) !== JSON.stringify(schema)
         // A class instance: the user message persists `format` through the schema's encoder.
-        const format = schema
-          ? new SessionV1.OutputFormatJsonSchema({
-              type: "json_schema",
-              schema: full ? WorkflowSchema.portable(full, schema) : schema,
-              retryCount: 0,
-            })
+        const format = sent
+          ? new SessionV1.OutputFormatJsonSchema({ type: "json_schema", schema: sent, retryCount: 0 })
           : undefined
         const ctx = yield* InstanceState.context
 
@@ -267,10 +298,18 @@ export namespace WorkflowSpawn {
           ...(warning ? { warning } : {}),
         })
 
+        const skipped = (sessionID: SessionID): Outcome => ({
+          status: "skipped",
+          sessionID,
+          tokens: ZERO,
+          tools: 0,
+          ...(warning ? { warning } : {}),
+        })
+
         /** Error recorded on a finished child turn: a user stop skips the agent, anything else is terminal. */
         const failed = (error: NonNullable<SessionV1.Assistant["error"]>, sessionID: SessionID): Outcome =>
           error.name === "MessageAbortedError"
-            ? { status: "skipped", sessionID, tokens: ZERO, tools: 0, ...(warning ? { warning } : {}) }
+            ? skipped(sessionID)
             : {
                 status: "error",
                 error: errorMessage(error),
@@ -316,10 +355,14 @@ export namespace WorkflowSpawn {
               ? instructions + WorkflowPrompts.worktree({ path: handle.path, main: handle.main })
               : instructions
 
-            /** One prompt turn; returns the newest assistant message once the child's subtree drained. */
+            /**
+             * One prompt turn; returns the newest assistant message once the child's subtree drained, or undefined
+             * when nothing answered this prompt (the session was stopped from outside before its first reply).
+             */
             const turn = Effect.fnUntraced(function* (prompt: string) {
+              const id = MessageID.ascending()
               const initial = yield* input.ops.prompt({
-                messageID: MessageID.ascending(),
+                messageID: id,
                 sessionID: child.id,
                 model: { providerID: model.providerID, modelID: model.modelID },
                 variant,
@@ -331,11 +374,14 @@ export namespace WorkflowSpawn {
               })
               yield* drain.wait(child.id)
               const latest = (yield* sessions.messages({ sessionID: child.id, limit: 1 }).pipe(Effect.orDie)).at(-1)
-              return latest?.info.role === "assistant" && latest.info.id > initial.info.id ? latest : initial
+              const message = latest?.info.role === "assistant" && latest.info.id > initial.info.id ? latest : initial
+              // Not a parentID check: a human steering the child can produce a newer reply with another parent.
+              return message.info.role === "assistant" && message.info.id > id ? message : undefined
             })
 
             const plain = Effect.gen(function* () {
               const message = yield* turn(input.agent.prompt)
+              if (!message) return skipped(child.id)
               if (message.info.role === "assistant" && message.info.error) return failed(message.info.error, child.id)
               return done(result(message), child.id)
             })
@@ -347,16 +393,20 @@ export namespace WorkflowSpawn {
               let last = ""
               for (const _ of Array.from({ length: limit })) {
                 const message = yield* turn(prompt)
+                if (!message) return skipped(child.id)
                 const info = message.info
                 if (info.role === "assistant" && info.error && info.error.name !== "StructuredOutputError") {
                   return failed(info.error, child.id)
                 }
                 const value = info.role === "assistant" ? info.structured : undefined
-                last =
+                const checked =
                   value === undefined
-                    ? `the ${WorkflowPrompts.STRUCTURED_OUTPUT_TOOL} tool was not called`
-                    : (WorkflowSchema.validate(schema ?? {}, value) ?? "")
-                if (value !== undefined && !last) return done(value, child.id)
+                    ? { error: `the ${WorkflowPrompts.STRUCTURED_OUTPUT_TOOL} tool was not called`, value }
+                    : coerce
+                      ? WorkflowSchema.coerce(schema ?? {}, value)
+                      : { error: WorkflowSchema.validate(schema ?? {}, value), value }
+                last = checked.error ?? ""
+                if (value !== undefined && !last) return done(checked.value, child.id)
                 prompt = WorkflowPrompts.retry(last)
               }
               return {

@@ -562,6 +562,7 @@ export const SessionProvider: ParentComponent = (props) => {
     available: () => features().workflows,
     draft: isDraftScope,
     post: vscode.postMessage,
+    listen: vscode.onMessage,
   })
   const selectVariant = variants.select
   const models = createModelSelector({

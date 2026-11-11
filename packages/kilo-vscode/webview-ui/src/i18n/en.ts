@@ -1435,6 +1435,15 @@ export const dict = {
   "workflow.agent.status.error": "Failed",
   "workflow.agent.status.skipped": "Skipped",
   "workflow.agent.status.cached": "Cached",
+  "prompt.workflows.command": "Watch workflow progress (open the latest run)",
+  "workflow.none": "No workflow runs in this session",
+  "workflow.large": "Large workflow",
+  "ui.permission.toolLabel.workflow": "Workflow",
+  "ui.permission.workflow.phases": "Phases:",
+  "ui.permission.workflow.caution":
+    "A workflow can run many agents and use substantially more tokens than a normal turn.",
+  "settings.autoApprove.tool.workflow":
+    "Launch dynamic workflows. Allows running a workflow script that orchestrates many subagents in the background.",
 
   "settings.saveBar.unsavedChanges": "Unsaved changes",
   "settings.saveBar.discard": "Discard",

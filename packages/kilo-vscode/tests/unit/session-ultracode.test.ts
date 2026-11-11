@@ -83,8 +83,9 @@ describe("session ultracode", () => {
     const state = setup({ session: "ses_a", stored, fallback: false })
     expect(state.ultra.toggle()).toBe(true)
     expect(state.ultra.request()).toBe(true)
-    // The backend's echo of this choice.
+    // The backend's echo of this choice, then the host reports the write stored.
     stored.ses_a = true
+    state.ultra.saved("ses_a", true)
     expect(state.ultra.current()).toBe(true)
     expect(state.ultra.request()).toBeUndefined()
     // Another client (the TUI's /ultracode) turns it off.
@@ -93,6 +94,45 @@ describe("session ultracode", () => {
     expect(state.ultra.toggle()).toBe(true)
     expect(state.ultra.request()).toBe(true)
     expect(state.posted.map((item) => item.enabled)).toEqual([true, true])
+  })
+
+  it("keeps the latest of two quick toggles while their writes are in flight", () => {
+    const stored: Record<string, boolean> = { ses_a: true }
+    const state = setup({ session: "ses_a", stored })
+    expect(state.ultra.toggle()).toBe(false)
+    expect(state.ultra.toggle()).toBe(true)
+    expect(state.posted.map((item) => item.enabled)).toEqual([false, true])
+    // The echo of the first write must not flip the switch back off.
+    stored.ses_a = false
+    expect(state.ultra.current()).toBe(true)
+    expect(state.ultra.request()).toBe(true)
+    state.ultra.saved("ses_a", true)
+    expect(state.ultra.current()).toBe(true)
+    // The second write lands; then the stored value takes over again.
+    stored.ses_a = true
+    state.ultra.saved("ses_a", true)
+    expect(state.ultra.current()).toBe(true)
+    expect(state.ultra.request()).toBeUndefined()
+    // Another client turns it off, even back to the value seen before the toggles.
+    stored.ses_a = false
+    expect(state.ultra.current()).toBe(false)
+    expect({ ...state.ultra.selections() }).toEqual({})
+  })
+
+  it("keeps a failed write's choice for the next prompt", () => {
+    const stored: Record<string, boolean> = { ses_a: false }
+    const state = setup({ session: "ses_a", stored })
+    state.ultra.select(true)
+    state.ultra.saved("ses_a", false)
+    expect(state.ultra.current()).toBe(true)
+    expect(state.ultra.request()).toBe(true)
+    // The prompt stored it; the stored value takes over.
+    stored.ses_a = true
+    expect(state.ultra.request()).toBeUndefined()
+    // A stray acknowledgement without a write in flight changes nothing.
+    state.ultra.saved("ses_a", true)
+    state.ultra.saved("ses_other", true)
+    expect(state.ultra.current()).toBe(true)
   })
 
   it("keeps a transferred draft choice until the new session stores it", () => {
@@ -121,6 +161,7 @@ describe("session ultracode", () => {
 
         createRoot((dispose) => {
           const [sessions, setSessions] = createStore({})
+          const handlers = []
           const ultra = createSessionUltracode({
             session: () => "ses_a",
             stored: (id) => sessions[id]?.ultracode,
@@ -128,18 +169,35 @@ describe("session ultracode", () => {
             available: () => true,
             draft: () => false,
             post: () => {},
+            listen: (handler) => {
+              handlers.push(handler)
+              return () => handlers.splice(handlers.indexOf(handler), 1)
+            },
           })
+          // The host's acknowledgement of a write, as KiloProvider posts it.
+          const ack = () => handlers.forEach((handler) => handler({ type: "ultracodeSaved", sessionID: "ses_a", ok: true }))
           const shown = createMemo(() => ultra.current())
           ultra.select(true)
           assert.equal(shown(), true)
           setSessions("ses_a", { ultracode: true })
+          ack()
           assert.equal(shown(), true)
           setSessions("ses_a", { ultracode: false })
           assert.equal(shown(), false)
-          // The same value as the stale choice, made against the newer stored value.
+          // A write in flight wins over an older echo; once stored, the stored value takes over.
           ultra.select(true)
           assert.equal(shown(), true)
+          ultra.select(false)
+          setSessions("ses_a", { ultracode: true })
+          assert.equal(shown(), false)
+          ack()
+          setSessions("ses_a", { ultracode: false })
+          ack()
+          assert.equal(shown(), false)
+          setSessions("ses_a", { ultracode: true })
+          assert.equal(shown(), true)
           dispose()
+          assert.equal(handlers.length, 0)
         })
       `,
       ],

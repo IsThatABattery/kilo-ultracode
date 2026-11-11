@@ -1482,6 +1482,15 @@ export const dict = {
   "workflow.agent.status.error": "Échec",
   "workflow.agent.status.skipped": "Ignoré",
   "workflow.agent.status.cached": "En cache",
+  "prompt.workflows.command": "Suivre la progression du workflow (ouvrir la dernière exécution)",
+  "workflow.none": "Aucune exécution de workflow dans cette session",
+  "workflow.large": "Workflow volumineux",
+  "ui.permission.toolLabel.workflow": "Workflow",
+  "ui.permission.workflow.phases": "Phases :",
+  "ui.permission.workflow.caution":
+    "Un workflow peut exécuter de nombreux agents et consommer nettement plus de jetons qu'un tour normal.",
+  "settings.autoApprove.tool.workflow":
+    "Lancer des workflows dynamiques. Permet d'exécuter un script de workflow qui orchestre de nombreux sous-agents en arrière-plan.",
   "settings.saveBar.unsavedChanges": "Modifications non enregistrées",
   "settings.saveBar.discard": "Ignorer",
   "settings.saveBar.save": "Enregistrer",

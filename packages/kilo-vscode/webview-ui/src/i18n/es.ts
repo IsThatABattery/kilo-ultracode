@@ -1463,6 +1463,15 @@ export const dict = {
   "workflow.agent.status.error": "Error",
   "workflow.agent.status.skipped": "Omitido",
   "workflow.agent.status.cached": "En caché",
+  "prompt.workflows.command": "Ver el progreso del flujo de trabajo (abrir la ejecución más reciente)",
+  "workflow.none": "No hay ejecuciones de flujos de trabajo en esta sesión",
+  "workflow.large": "Flujo de trabajo grande",
+  "ui.permission.toolLabel.workflow": "Flujo de trabajo",
+  "ui.permission.workflow.phases": "Fases:",
+  "ui.permission.workflow.caution":
+    "Un flujo de trabajo puede ejecutar muchos agentes y usar bastantes más tokens que un turno normal.",
+  "settings.autoApprove.tool.workflow":
+    "Iniciar flujos de trabajo dinámicos. Permite ejecutar un script de flujo de trabajo que coordina muchos subagentes en segundo plano.",
   "settings.saveBar.unsavedChanges": "Cambios sin guardar",
   "settings.saveBar.discard": "Descartar",
   "settings.saveBar.save": "Guardar",

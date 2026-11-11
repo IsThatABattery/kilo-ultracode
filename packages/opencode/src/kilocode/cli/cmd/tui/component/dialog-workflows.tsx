@@ -8,15 +8,19 @@ import { useEvent } from "@tui/context/event"
 import { useProject } from "@tui/context/project"
 import { useRoute } from "@tui/context/route"
 import { useSDK } from "@tui/context/sdk"
+import { useSync } from "@tui/context/sync"
 import { useTheme } from "@tui/context/theme"
 import { useBindings } from "@tui/keymap"
 import { useDialog } from "@tui/ui/dialog"
-import { DialogSelect, type DialogSelectOption } from "@tui/ui/dialog-select"
+import { DialogSelect, type DialogSelectOption, type DialogSelectRef } from "@tui/ui/dialog-select"
 import { useToast } from "@tui/ui/toast"
+import { KiloInstance } from "@tui/kilocode/instance"
 import { errorMessage } from "@/util/error"
 import { Locale } from "@/util/locale"
 import { WorkflowView } from "@/kilocode/cli/cmd/tui/workflow-view"
+import path from "path"
 import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show, untrack } from "solid-js"
+import { reconcile } from "solid-js/store"
 
 type Run = WorkflowRunInfo
 type Detail = WorkflowRunDetail
@@ -89,8 +93,14 @@ export function useWorkflowRuns(scope: () => { sessionID?: string } | undefined)
       setRuns((list) => WorkflowView.upsert(list, evt.properties.run))
     }),
   )
-  // A disposed instance takes its runs with it; reload so stopped runs do not linger as running.
-  onCleanup(event.on("server.instance.disposed", () => setEpoch((value) => value + 1)))
+  // A disposed instance takes its runs with it; reload so stopped runs do not linger as running. Only this directory's
+  // instance holds them: a finished worktree agent disposes its own directory, which must not reset every view.
+  onCleanup(
+    event.on("server.instance.disposed", (evt) => {
+      if (!KiloInstance.own(evt.properties.directory, project.instance.directory())) return
+      setEpoch((value) => value + 1)
+    }),
+  )
 
   return { runs, loaded }
 }
@@ -140,7 +150,8 @@ export function useWorkflowRun(runID: string) {
   )
   // A disposed instance stops its runs without publishing; recheck so an open view does not stay "running".
   onCleanup(
-    event.on("server.instance.disposed", () => {
+    event.on("server.instance.disposed", (evt) => {
+      if (!KiloInstance.own(evt.properties.directory, project.instance.directory())) return
       void sdk.client.workflow
         .get({ runID, workspace: project.workspace.current() })
         .catch((error: unknown) => ({ data: undefined, error }))
@@ -165,6 +176,7 @@ export function useWorkflowRun(runID: string) {
 function useActions() {
   const sdk = useSDK()
   const project = useProject()
+  const sync = useSync()
   const toast = useToast()
   const [busy, setBusy] = createSignal<string>()
 
@@ -213,6 +225,14 @@ function useActions() {
       const file = result?.data?.path
       if (!file) return false
       toast.show({ variant: "success", title: `Saved workflow "${run.name}"`, message: file })
+      // The server lists the saved workflow as a command right away; refetch so `/<name>` autocompletes and submits as
+      // a command in this TUI too (the list is otherwise only fetched at bootstrap).
+      void sdk.client.command
+        .list({ workspace: project.workspace.current() })
+        .then((list) => {
+          if (list.data) sync.set("command", reconcile(list.data))
+        })
+        .catch((error: unknown) => toast.show({ variant: "error", message: errorMessage(error) }))
       return true
     },
   }
@@ -292,11 +312,14 @@ export function DialogWorkflows(props: { sessionID?: string; auto?: boolean }) {
 
   onMount(() => dialog.setSize("large"))
 
+  // Only the first load may open the only run: a reload after an instance disposal must not pull the user out of the list.
+  let first = props.auto !== false
   createEffect(
     on(
       data.loaded,
       (ready) => {
-        if (!ready || props.auto === false) return
+        if (!ready || !first) return
+        first = false
         const runs = untrack(data.runs)
         const only = runs.length === 1 ? runs.at(0) : undefined
         if (only) open(only.id, true)
@@ -645,22 +668,44 @@ function DialogWorkflowAgents(props: { runID: string; phase: string; back: () =>
   )
 }
 
-/** Save a run's script as a saved workflow: the project's .kilo/workflows/ or the global workflows directory. */
+/**
+ * Save a run's script as a saved workflow: the project's .kilo/workflows/ or the global workflows directory, shown as
+ * the resolved path the server writes to. Tab toggles between the two locations, like Claude Code.
+ */
 function DialogWorkflowSave(props: { run: Pick<Run, "id" | "name">; back: () => void }) {
   const actions = useActions()
+  const project = useProject()
+  const [scope, setScope] = createSignal<Scope>("project")
+  const global = createMemo(() => {
+    const dir = project.instance.path().config
+    return dir ? `${path.join(dir, "workflows")}${path.sep}` : "~/.config/kilo/workflows/"
+  })
+  const [select, setSelect] = createSignal<DialogSelectRef<Scope>>()
+  const dialog = useDialog()
   useBack(props.back)
+  onMount(() => dialog.setSize("large"))
   return (
     <DialogSelect<Scope>
+      ref={setSelect}
       title={`Save workflow "${props.run.name}"`}
       renderFilter={false}
       locked={actions.busy() !== undefined}
       options={[
         { title: "Project", value: "project", description: ".kilo/workflows/ in this project" },
-        { title: "Global", value: "global", description: "~/.config/kilo/workflows/ for every project" },
+        { title: "Global", value: "global", description: `${global()} for every project` },
       ]}
+      onMove={(option) => setScope(option.value)}
       onSelect={async (option) => {
         if (await actions.save(props.run, option.value)) props.back()
       }}
+      bindings={[
+        {
+          key: "tab",
+          desc: "Toggle save location",
+          group: "Workflows",
+          cmd: () => select()?.moveTo(scope() === "project" ? "global" : "project"),
+        },
+      ]}
     />
   )
 }

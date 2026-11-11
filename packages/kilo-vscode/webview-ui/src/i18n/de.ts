@@ -1473,6 +1473,15 @@ export const dict = {
   "workflow.agent.status.error": "Fehlgeschlagen",
   "workflow.agent.status.skipped": "Übersprungen",
   "workflow.agent.status.cached": "Zwischengespeichert",
+  "prompt.workflows.command": "Workflow-Fortschritt verfolgen (letzten Lauf öffnen)",
+  "workflow.none": "Keine Workflow-Läufe in dieser Sitzung",
+  "workflow.large": "Großer Workflow",
+  "ui.permission.toolLabel.workflow": "Workflow",
+  "ui.permission.workflow.phases": "Phasen:",
+  "ui.permission.workflow.caution":
+    "Ein Workflow kann viele Agenten ausführen und deutlich mehr Token verbrauchen als ein normaler Durchgang.",
+  "settings.autoApprove.tool.workflow":
+    "Dynamische Workflows starten. Erlaubt das Ausführen eines Workflow-Skripts, das im Hintergrund viele Subagenten koordiniert.",
   "settings.saveBar.unsavedChanges": "Nicht gespeicherte Änderungen",
   "settings.saveBar.discard": "Verwerfen",
   "settings.saveBar.save": "Speichern",

@@ -107,3 +107,34 @@ describe("WorkflowSchema.portable", () => {
     expect(WorkflowSchema.validate(schema, { pair: ["a", "b"] })).toContain("/pair/1")
   })
 })
+
+describe("WorkflowSchema.coerce", () => {
+  const gemini = { providerID: "openrouter", api: { id: "google/gemini-3-pro", npm: "@openrouter/ai-sdk-provider" } }
+  const severity = {
+    type: "object",
+    properties: {
+      severity: { type: "integer", enum: [1, 2, 3] },
+      level: { enum: [0.5, 1.5] },
+      blocking: { enum: [true, false] },
+    },
+    required: ["severity"],
+  }
+
+  test("accepts the answer a Gemini model gives to its stringified enum, as the original types", () => {
+    const sent = WorkflowSchema.portable(gemini as unknown as Provider.Model, severity)
+    expect(sent.properties).toMatchObject({ severity: { type: "string", enum: ["1", "2", "3"] } })
+    const answer = { severity: "2", level: "1.5", blocking: "false" }
+    expect(WorkflowSchema.validate(sent, answer)).toBeUndefined()
+    // Strict validation against the script's schema can never pass for this answer...
+    expect(WorkflowSchema.validate(severity, answer)).toContain("/severity must be integer")
+    // ...so it is coerced back, and the script receives the types it declared.
+    expect(WorkflowSchema.coerce(severity, answer)).toEqual({ value: { severity: 2, level: 1.5, blocking: false } })
+    expect(answer).toEqual({ severity: "2", level: "1.5", blocking: "false" })
+  })
+
+  test("still rejects values outside the original schema", () => {
+    const out = WorkflowSchema.coerce(severity, { severity: "7" })
+    expect(out.error).toContain("/severity must be equal to one of the allowed values [1,2,3]")
+    expect(WorkflowSchema.coerce(severity, {}).error).toBe("(root) must have required property 'severity'")
+  })
+})

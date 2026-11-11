@@ -162,11 +162,55 @@ describe("workflow webview requests", () => {
     expect(calls).toEqual([])
   })
 
-  it("persists ultracode in the session's directory", async () => {
+  it("persists ultracode in the session's directory and acknowledges the write", async () => {
     const calls: unknown[][] = []
+    const posted: unknown[] = []
     const message = { type: "setUltracode", sessionID: "ses_parent", enabled: true }
-    expect(await routeWorkflowMessage(message, ctx(calls, []))).toBe(true)
+    expect(await routeWorkflowMessage(message, ctx(calls, posted))).toBe(true)
     expect(calls[0]?.[1]).toEqual({ sessionID: "ses_parent", enabled: true, directory: "/dir/ses_parent" })
+    expect(posted).toEqual([{ type: "ultracodeSaved", sessionID: "ses_parent", ok: true }])
+  })
+
+  it("writes quick ultracode toggles one at a time, in order", async () => {
+    const order: string[] = []
+    const gates = [Promise.withResolvers<void>(), Promise.withResolvers<void>()]
+    const set = async (params: { enabled: boolean }) => {
+      const index = params.enabled ? 1 : 0
+      order.push(`start ${params.enabled}`)
+      await gates[index]!.promise
+      order.push(`end ${params.enabled}`)
+      return { data: { enabled: params.enabled } }
+    }
+    const posted: unknown[] = []
+    const state = {
+      client: { ultracode: { set } } as unknown as KiloClient,
+      dir: (sid: string) => `/dir/${sid}`,
+      post: (message: unknown) => posted.push(message),
+    }
+    const off = routeWorkflowMessage({ type: "setUltracode", sessionID: "ses_q", enabled: false }, state)
+    const on = routeWorkflowMessage({ type: "setUltracode", sessionID: "ses_q", enabled: true }, state)
+    // The later toggle may finish faster, but it starts only after the earlier one is stored.
+    gates[1]!.resolve()
+    await Bun.sleep(0)
+    expect(order).toEqual(["start false"])
+    gates[0]!.resolve()
+    await Promise.all([off, on])
+    expect(order).toEqual(["start false", "end false", "start true", "end true"])
+    expect(posted).toEqual([
+      { type: "ultracodeSaved", sessionID: "ses_q", ok: true },
+      { type: "ultracodeSaved", sessionID: "ses_q", ok: true },
+    ])
+  })
+
+  it("acknowledges an ultracode write that could not be stored", async () => {
+    const posted: unknown[] = []
+    const message = { type: "setUltracode", sessionID: "ses_parent", enabled: true }
+    await routeWorkflowMessage(message, ctx([], posted, "set"))
+    await routeWorkflowMessage(message, { client: null, dir: () => "/repo", post: (item) => posted.push(item) })
+    expect(posted).toEqual([
+      { type: "ultracodeSaved", sessionID: "ses_parent", ok: false },
+      { type: "ultracodeSaved", sessionID: "ses_parent", ok: false },
+    ])
   })
 
   it("loads a run's detail", async () => {

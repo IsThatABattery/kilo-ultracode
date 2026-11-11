@@ -89,6 +89,8 @@ import {
   undoKey,
 } from "./prompt-input-utils"
 import { sandboxMessages } from "./prompt-sandbox-messages"
+import { revealWorkflow } from "./WorkflowToolCard"
+import { workflowLatest } from "./workflow-tool-state"
 import type { ExtensionMessage, ReviewCommentEntry, SendMessageFailedMessage, TextPart } from "../../types/messages"
 import { formatReviewCommentsMarkdown, pushInstruction } from "../../utils/review-comment-markdown"
 import {
@@ -498,7 +500,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       const hidden = new Set<string>()
       if (session.variantList(sid()).length === 0) hidden.add("variant")
       if (!sandboxVisible()) hidden.add("sandbox")
-      if (!features().workflows) hidden.add("ultracode")
+      if (!features().workflows) hidden.add("ultracode").add("workflows")
       if (props.worktree !== true) hidden.add("review worktree")
       if (!props.onUpdateBase || props.worktree !== true) hidden.add("update-from-base")
       return hidden
@@ -530,6 +532,21 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         action: () => {
           const next = session.ultracode.toggle(sid())
           showToast({ title: language.t(next ? "prompt.ultracode.on" : "prompt.ultracode.off") })
+        },
+        enabled: () => features().workflows,
+      },
+      {
+        // The workflow tool tells the model to point the user at /workflows; here it opens the run's card.
+        name: "workflows",
+        description: language.t("prompt.workflows.command"),
+        hints: ["workflow", "progress"],
+        action: () => {
+          const part = workflowLatest(session.getSessionToolParts(session.currentSessionID() ?? ""))
+          if (!part?.messageID) {
+            showToast({ title: language.t("workflow.none") })
+            return
+          }
+          revealWorkflow({ id: part.id, messageID: part.messageID })
         },
         enabled: () => features().workflows,
       },

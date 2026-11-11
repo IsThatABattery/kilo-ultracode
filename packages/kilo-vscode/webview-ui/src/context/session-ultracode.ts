@@ -12,14 +12,18 @@
  * preview only remembers it locally; the first prompt carries it and the
  * backend stores it on the new session.
  *
- * A local choice only bridges the time until the backend stores it. Once the
- * session's stored value differs from the one seen when the choice was made
- * (the echo of this choice, or a newer one from another client such as the
- * TUI's `/ultracode`), the stored value wins.
+ * A local choice only bridges the time until the backend stores it. While a
+ * write is in flight the choice wins, so the echo of an earlier quick toggle
+ * cannot flip the switch back. Once the host reports the last write stored
+ * (`ultracodeSaved`), the stored value takes over. A choice that was never
+ * written (a draft's, moved to its session) or whose write failed holds only
+ * while the stored value stays the one seen then, so the next prompt carries
+ * it; a newer value from another client such as the TUI's `/ultracode` wins.
  */
 
-import type { Accessor } from "solid-js"
+import { onCleanup, type Accessor } from "solid-js"
 import { createStore, produce } from "solid-js/store"
+import type { ExtensionMessage } from "../types/messages"
 
 type Message = { type: "setUltracode"; sessionID: string; enabled: boolean }
 
@@ -30,29 +34,32 @@ interface Options {
   available: Accessor<boolean>
   draft: (id: string) => boolean
   post: (message: Message) => void
+  /** Host messages, for the `ultracodeSaved` acknowledgements of this module's writes. */
+  listen?: (handler: (message: ExtensionMessage) => void) => () => void
 }
 
 export function createSessionUltracode(options: Options) {
-  // Each choice keeps the stored value it was made against (`base`).
-  const [choices, setChoices] = createStore<Record<string, { value: boolean; base?: boolean }>>({})
+  // Each choice keeps the stored value it was made against (`base`) and its writes still in flight.
+  const [choices, setChoices] = createStore<Record<string, { value: boolean; base?: boolean; pending: number }>>({})
   const scope = (id?: string) => id ?? options.session()
   // Only backend session ids ("ses…") can be stored; drafts include the UUID a no-session send mints.
   const local = (id: string) => options.draft(id) || !id.startsWith("ses")
-  const set = (id: string, value: boolean | undefined, base?: boolean) =>
+  const set = (id: string, value: boolean | undefined, base?: boolean, pending = 0) =>
     setChoices(
       produce((map) => {
         if (value === undefined) {
           delete map[id]
           return
         }
-        map[id] = { value, base }
+        map[id] = { value, base, pending }
       }),
     )
 
   /** The local choice while it is still newer than the session's stored value. */
   const choice = (sid: string) => {
     const entry = choices[sid]
-    if (!entry || options.stored(sid) !== entry.base) return undefined
+    if (!entry) return undefined
+    if (entry.pending === 0 && options.stored(sid) !== entry.base) return undefined
     return entry.value
   }
 
@@ -80,9 +87,27 @@ export function createSessionUltracode(options: Options) {
 
   const select = (value: boolean, id?: string) => {
     const sid = scope(id)
-    set(sid, value, options.stored(sid))
-    if (!options.available() || local(sid)) return
-    options.post({ type: "setUltracode", sessionID: sid, enabled: value })
+    const send = options.available() && !local(sid)
+    const pending = (choices[sid]?.pending ?? 0) + (send ? 1 : 0)
+    set(sid, value, options.stored(sid), pending)
+    if (send) options.post({ type: "setUltracode", sessionID: sid, enabled: value })
+  }
+
+  /** The host finished one write for this session; after the last one, the stored value takes over. */
+  const saved = (sid: string, ok: boolean) => {
+    const entry = choices[sid]
+    if (!entry || entry.pending === 0) return
+    if (entry.pending > 1) return set(sid, entry.value, entry.base, entry.pending - 1)
+    // A stored choice is the backend's now; a failed one waits for the next prompt to carry it.
+    if (ok) return set(sid, undefined)
+    set(sid, entry.value, options.stored(sid))
+  }
+
+  if (options.listen) {
+    const stop = options.listen((message) => {
+      if (message.type === "ultracodeSaved") saved(message.sessionID, message.ok)
+    })
+    onCleanup(stop)
   }
 
   const toggle = (id?: string) => {
@@ -105,7 +130,7 @@ export function createSessionUltracode(options: Options) {
   /** The local choices by scope, stale or not. */
   const selections = () => Object.fromEntries(Object.entries(choices).map(([id, entry]) => [id, entry.value]))
 
-  return { selections, current, request, body, select, toggle, transfer, forget }
+  return { selections, current, request, body, select, saved, toggle, transfer, forget }
 }
 
 /** What chat surfaces read and change; drafts and transfers stay inside the session context. */

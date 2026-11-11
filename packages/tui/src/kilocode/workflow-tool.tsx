@@ -1,6 +1,7 @@
 import type { ToolPart, WorkflowRunInfo } from "@kilocode/sdk/v2"
 import type { JSX } from "@opentui/solid"
 import { createMemo, Match, Show, Switch, type Component } from "solid-js"
+import { useSync } from "../context/sync"
 import { useTheme } from "../context/theme"
 import { useDialog } from "../ui/dialog"
 import { isRecord } from "../util/record"
@@ -27,10 +28,21 @@ function metadata(part: ToolPart): Record<string, unknown> {
 /** The `workflow` tool call: run name and description, then the live run's status, progress and phases. */
 export function WorkflowTool(props: { part: ToolPart; block: Block }) {
   const dialog = useDialog()
+  const sync = useSync()
   const runID = createMemo(() => text(metadata(props.part).runID))
   const data = useWorkflowRuns(() => (runID() ? { sessionID: props.part.sessionID } : undefined))
   const run = createMemo(() => data.runs().find((item) => item.id === runID()))
   const now = useNow(() => WorkflowView.active(run()?.status ?? "stopped"))
+  const large = createMemo(() => {
+    const item = run()
+    if (!item || !WorkflowView.active(item.status)) return false
+    const config = sync.data.config.experimental
+    const session = WorkflowView.root((id) => sync.session.get(id)?.parentID, item.sessionID)
+    return WorkflowView.large(item, {
+      configured: config?.workflow_size,
+      ultracode: WorkflowView.ultracode(sync.session.get(session)?.metadata, config?.ultracode === true),
+    })
+  })
   const open = () => {
     const id = runID()
     if (!id) return
@@ -44,6 +56,7 @@ export function WorkflowTool(props: { part: ToolPart; block: Block }) {
       run={run()}
       loaded={data.loaded()}
       now={now()}
+      large={large()}
       onOpen={runID() ? open : undefined}
     />
   )
@@ -56,6 +69,7 @@ export function WorkflowCard(props: {
   run?: WorkflowRunInfo
   loaded?: boolean
   now: number
+  large?: boolean
   onOpen?: () => void
 }) {
   const { theme } = useTheme()
@@ -94,7 +108,11 @@ export function WorkflowCard(props: {
                 </span>
                 {" · "}
                 {WorkflowView.summary(run(), props.now)}
+                {` · ${run().size} size`}
               </text>
+              <Show when={props.large}>
+                <text fg={theme.warning}>{WorkflowView.LARGE}</text>
+              </Show>
               <Show when={run().phases.length > 0}>
                 <text fg={theme.textMuted} wrapMode="word">
                   {run()

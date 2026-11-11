@@ -28,13 +28,31 @@ export namespace WorkflowBudget {
    * spent since that message, and the message id (runs launched for one turn share a token pool).
    */
   export function from(messages: ReadonlyArray<SessionV1.WithParts>) {
-    const human = messages.findLast((message) => message.info.role === "user" && typed(message).trim().length > 0)
-    if (!human) return { total: null, main: 0 }
-    const main = messages
-      .slice(messages.indexOf(human) + 1)
+    const last = messages.findLast(human)
+    if (!last) return { total: null, main: 0 }
+    return { total: parse(typed(last)), main: output(messages.slice(messages.indexOf(last) + 1)), turn: last.info.id }
+  }
+
+  /**
+   * Main-loop output tokens of the turn that began with message `turn`: every assistant step after it, up to the
+   * next human message. 0 when `turn` is not among `messages`.
+   */
+  export function since(messages: ReadonlyArray<SessionV1.WithParts>, turn: string) {
+    const start = messages.findIndex((message) => message.info.id === turn)
+    if (start === -1) return 0
+    const rest = messages.slice(start + 1)
+    const end = rest.findIndex(human)
+    return output(end === -1 ? rest : rest.slice(0, end))
+  }
+
+  function human(message: SessionV1.WithParts) {
+    return message.info.role === "user" && typed(message).trim().length > 0
+  }
+
+  function output(messages: ReadonlyArray<SessionV1.WithParts>) {
+    return messages
       .filter((message) => message.info.role === "assistant")
       .flatMap((message) => message.parts)
       .reduce((sum, part) => (part.type === "step-finish" ? sum + part.tokens.output + part.tokens.reasoning : sum), 0)
-    return { total: parse(typed(human)), main, turn: human.info.id }
   }
 }

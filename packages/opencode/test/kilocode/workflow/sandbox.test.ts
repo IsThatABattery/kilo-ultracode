@@ -207,6 +207,30 @@ return out`)
     expect(started.calls).toEqual([])
   })
 
+  test("an inherited toJSON or setter cannot rewrite what reaches the host", async () => {
+    const started = start(
+      `Object.prototype.toJSON = function () { return { method: "bogus", message: { not: "string" }, title: 42, prompt: 5 } }
+Object.defineProperty(Object.prototype, "label", { set() {}, configurable: true })
+log("hi")
+phase("P")
+const r = await agent("p", { label: "l" })
+const w = await workflow({ scriptPath: "/tmp/child.js" })
+// The script owns its own result: a string sidesteps its own toJSON.
+return r + "," + w`,
+      {
+        onCall: async (call) =>
+          call.method === "agent" ? `r:${call.prompt}` : call.method === "workflow" ? "w" : null,
+      },
+    )
+    expect(await started.handle.result).toEqual({ ok: true, value: "r:p,w" })
+    expect(started.calls).toEqual([
+      { method: "log", message: "hi" },
+      { method: "phase", title: "P" },
+      { method: "agent", prompt: "p", opts: { label: "l", phase: "P" } },
+      { method: "workflow", ref: { scriptPath: "/tmp/child.js" } },
+    ])
+  })
+
   test("keeps the bridge working when the script patches built-ins", async () => {
     expect(
       await value(
@@ -425,6 +449,45 @@ return { before, after: [budget.spent(), budget.remaining()], frozen: Object.isF
   })
 })
 
+describe("WorkflowSandbox.validate", () => {
+  test("accepts exactly the call shapes, keeping only known agent options", () => {
+    expect(WorkflowSandbox.validate({ method: "log", message: "x" })).toEqual({ method: "log", message: "x" })
+    expect(WorkflowSandbox.validate({ method: "phase", title: "P" })).toEqual({ method: "phase", title: "P" })
+    expect(
+      WorkflowSandbox.validate({ method: "agent", prompt: "p", opts: { label: "l", permission: "allow" } }),
+    ).toEqual({ method: "agent", prompt: "p", opts: { label: "l" } })
+    expect(WorkflowSandbox.validate({ method: "agent", prompt: "p" })).toEqual({
+      method: "agent",
+      prompt: "p",
+      opts: {},
+    })
+    expect(WorkflowSandbox.validate({ method: "workflow", ref: { scriptPath: "/a.js", x: 1 }, args: [1] })).toEqual({
+      method: "workflow",
+      ref: { scriptPath: "/a.js" },
+      args: [1],
+    })
+    expect(WorkflowSandbox.validate({ method: "workflow", ref: "triage" })).toEqual({
+      method: "workflow",
+      ref: "triage",
+    })
+  })
+
+  test.each([
+    ["non-object", "log"],
+    ["null", null],
+    ["unknown method", { method: "bogus", ref: 1 }],
+    ["non-string log message", { method: "log", message: { not: "string" } }],
+    ["non-string phase title", { method: "phase", title: 42 }],
+    ["non-string prompt", { method: "agent", prompt: 5, opts: {} }],
+    ["array opts", { method: "agent", prompt: "p", opts: [] }],
+    ["string opts", { method: "agent", prompt: "p", opts: "x" }],
+    ["bad workflow ref", { method: "workflow", ref: 1 }],
+    ["bad scriptPath", { method: "workflow", ref: { scriptPath: 2 } }],
+  ])("rejects a malformed call (%s)", (_, value) => {
+    expect(WorkflowSandbox.validate(value)).toBeUndefined()
+  })
+})
+
 describe("WorkflowSandbox determinism", () => {
   test("Date.now(), argless new Date(), Date() and Math.random() throw", async () => {
     const result = await value(`const out = {}
@@ -454,6 +517,27 @@ return [d.toISOString(), d instanceof Date, d.constructor === Date, Date.UTC(202
     ).toEqual(["1970-01-01T00:00:00.000Z", true, true, 1577923200000, 1577923200000, 2021, 5])
   })
 
+  test("Intl date formatting needs an explicit date", async () => {
+    expect(
+      await value(`const f = new Intl.DateTimeFormat("en-US", { timeZone: "UTC", year: "numeric" })
+const out = []
+for (const make of [() => f.format(), () => f.format(undefined), () => f.formatToParts(), () => [1].map(f.format)]) {
+  try { make(); out.push("allowed") } catch (e) { out.push(e.message) }
+}
+return [out, f.format(new Date(0)), f.format(0), f.formatToParts(0).map((p) => p.value).join("")]`),
+    ).toEqual([
+      [
+        "Intl.DateTimeFormat format() without a date is unavailable in workflow scripts — pass timestamps via args",
+        "Intl.DateTimeFormat format() without a date is unavailable in workflow scripts — pass timestamps via args",
+        "Intl.DateTimeFormat formatToParts() without a date is unavailable in workflow scripts — pass timestamps via args",
+        "allowed",
+      ],
+      "1970",
+      "1970",
+      "1970",
+    ])
+  })
+
   test("Temporal.Now is unavailable when Temporal exists", async () => {
     const result = await value(`if (typeof Temporal === "undefined") return "absent"
 try { Temporal.Now.instant(); return "allowed" } catch (e) { return e.message }`)
@@ -468,7 +552,7 @@ describe("WorkflowSandbox confinement", () => {
   test("host globals are absent", async () => {
     expect(
       await value(
-        `return ["process", "Bun", "require", "fetch", "setTimeout", "setInterval", "queueMicrotask", "performance", "Worker", "postMessage", "self", "WeakRef", "FinalizationRegistry"].map((k) => k + ":" + typeof globalThis[k])`,
+        `return ["process", "Bun", "require", "fetch", "setTimeout", "setInterval", "queueMicrotask", "performance", "Worker", "postMessage", "self", "WeakRef", "FinalizationRegistry", "ShadowRealm"].map((k) => k + ":" + typeof globalThis[k])`,
       ),
     ).toEqual([
       "process:undefined",
@@ -484,7 +568,41 @@ describe("WorkflowSandbox confinement", () => {
       "self:undefined",
       "WeakRef:undefined",
       "FinalizationRegistry:undefined",
+      "ShadowRealm:undefined",
     ])
+  })
+
+  test("the context global and its inherited members never lead to the host realm", async () => {
+    const result = await value(
+      `const probe = (value) => {
+  try { return typeof value.constructor.constructor("return typeof process")() } catch (e) { return "blocked:" + e.name }
+}
+const bare = (name) => {
+  try { return probe(globalThis[name] ?? eval(name)) } catch (e) { return "blocked:" + e.name }
+}
+const lookup = (code) => {
+  try { return probe(code()) } catch (e) { return "blocked:" + e.name }
+}
+return {
+  global: probe(globalThis),
+  self: probe(this),
+  proto: lookup(() => Object.getPrototypeOf(globalThis)),
+  dunder: lookup(() => __proto__),
+  valueOf: lookup(() => valueOf),
+  hasOwnProperty: lookup(() => hasOwnProperty),
+  propertyIsEnumerable: lookup(() => propertyIsEnumerable),
+  lookupGetter: lookup(() => __lookupGetter__),
+  constructor: lookup(() => constructor),
+  bareName: bare("toString"),
+}`,
+    )
+    const entries = Object.entries(result as Record<string, string>)
+    expect(entries).toHaveLength(10)
+    // A blocked lookup either throws (ReferenceError/TypeError: no such global) or reaches only the context's own
+    // Function, whose string code generation is disabled (EvalError). Nothing may evaluate code.
+    for (const [key, item] of entries) {
+      expect([key, item.startsWith("blocked:")]).toEqual([key, true])
+    }
   })
 
   test("constructor-chain escapes from every exposed value are blocked", async () => {
@@ -608,6 +726,39 @@ describe("WorkflowSandbox lifecycle", () => {
       ok: false,
       error: WorkflowSandbox.UNRESPONSIVE,
     })
+  })
+
+  test.each([
+    ["log()", `while (true) log("x")`],
+    ["agent()", `while (true) agent("x")`],
+  ])("a synchronous loop flooding %s calls is stopped", async (_, body) => {
+    const begin = performance.now()
+    expect(await run(body, { onCall: async () => null })).toEqual({ ok: false, error: WorkflowSandbox.FLOOD })
+    expect(performance.now() - begin).toBeLessThan(10_000)
+  })
+
+  test("a runaway allocation is stopped by the memory guard before the watchdog", async () => {
+    const memory = process.memoryUsage.rss() + 256 * 1024 * 1024
+    expect(
+      await run(`const hoard = []\nwhile (true) hoard.push(new Array(1e6).fill(1))`, {
+        memory,
+        watchdog: { interval: 1_000, timeout: 120_000 },
+      }),
+    ).toEqual({ ok: false, error: WorkflowSandbox.MEMORY })
+  })
+
+  test("a stalled host (suspend, long GC) does not count as an unresponsive script", async () => {
+    expect(
+      await value(`return await agent("x")`, {
+        watchdog: { interval: 20, timeout: 600 },
+        onCall: async () => {
+          // Block the host thread well past the timeout: no pings go out, so none can be missed.
+          const end = performance.now() + 1_500
+          while (performance.now() < end) {}
+          return "ok"
+        },
+      }),
+    ).toBe("ok")
   })
 
   test("the watchdog leaves an idle script waiting on slow agents alone", async () => {

@@ -1459,6 +1459,15 @@ export const dict = {
   "workflow.agent.status.error": "Falhou",
   "workflow.agent.status.skipped": "Ignorado",
   "workflow.agent.status.cached": "Em cache",
+  "prompt.workflows.command": "Acompanhar o progresso do fluxo de trabalho (abrir a execução mais recente)",
+  "workflow.none": "Nenhuma execução de fluxo de trabalho nesta sessão",
+  "workflow.large": "Fluxo de trabalho grande",
+  "ui.permission.toolLabel.workflow": "Fluxo de trabalho",
+  "ui.permission.workflow.phases": "Fases:",
+  "ui.permission.workflow.caution":
+    "Um fluxo de trabalho pode executar muitos agentes e usar muito mais tokens do que um turno normal.",
+  "settings.autoApprove.tool.workflow":
+    "Iniciar fluxos de trabalho dinâmicos. Permite executar um script de fluxo de trabalho que coordena vários subagentes em segundo plano.",
   "settings.saveBar.unsavedChanges": "Alterações não salvas",
   "settings.saveBar.discard": "Descartar",
   "settings.saveBar.save": "Salvar",

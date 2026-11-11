@@ -1441,6 +1441,15 @@ export const dict = {
   "workflow.agent.status.error": "Ошибка",
   "workflow.agent.status.skipped": "Пропущен",
   "workflow.agent.status.cached": "Из кэша",
+  "prompt.workflows.command": "Следить за ходом рабочего процесса (открыть последний запуск)",
+  "workflow.none": "В этой сессии нет запусков рабочих процессов",
+  "workflow.large": "Большой рабочий процесс",
+  "ui.permission.toolLabel.workflow": "Рабочий процесс",
+  "ui.permission.workflow.phases": "Этапы:",
+  "ui.permission.workflow.caution":
+    "Рабочий процесс может запустить много агентов и израсходовать значительно больше токенов, чем обычный ход.",
+  "settings.autoApprove.tool.workflow":
+    "Запуск динамических рабочих процессов. Разрешает запускать скрипт рабочего процесса, который в фоне координирует множество субагентов.",
   "settings.saveBar.unsavedChanges": "Несохранённые изменения",
   "settings.saveBar.discard": "Отменить",
   "settings.saveBar.save": "Сохранить",

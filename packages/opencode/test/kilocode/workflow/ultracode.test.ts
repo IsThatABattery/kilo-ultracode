@@ -64,12 +64,19 @@ describe("KiloUltracode.keyword", () => {
     expect(KiloUltracode.keyword([])).toBe(false)
   })
 
-  test("ignores synthetic, ignored, and Kilo-injected text", () => {
+  test("ignores synthetic, ignored, Kilo-injected, headless, and dismissed text", () => {
     expect(KiloUltracode.keyword([text("ultracode", { synthetic: true })])).toBe(false)
     expect(KiloUltracode.keyword([text("ultracode", { ignored: true })])).toBe(false)
     expect(
       KiloUltracode.keyword([text("Run ultracode review", { metadata: { kilo: { injected: { title: "/x" } } } })]),
     ).toBe(false)
+    // `kilo run` prompts and relayed GitHub comments are stamped headless: not typed by the user in a client.
+    expect(
+      KiloUltracode.keyword([text("explain the ultracode setting", { metadata: { kilo: { origin: "headless" } } })]),
+    ).toBe(false)
+    expect(KiloUltracode.keyword([text("ultracode", { metadata: { kilo: { origin: "other" } } })])).toBe(true)
+    // The prompt's per-message dismiss (Alt+W or backspace after the highlighted keyword) stamps `noUltracode`.
+    expect(KiloUltracode.keyword([text("ultracode this", { metadata: { kilo: { noUltracode: true } } })])).toBe(false)
     // Non-Kilo metadata does not hide human text.
     expect(KiloUltracode.keyword([text("ultracode", { metadata: { kind: "other" } })])).toBe(true)
   })
@@ -235,11 +242,56 @@ describe("KiloUltracode.apply", () => {
         const injected = yield* seed(chat.id, [
           { text: "ultracode", synthetic: true },
           { text: "Use ultracode", metadata: { kilo: { injected: { title: "/cmd" } } } },
+          { text: "explain ultracode", metadata: { kilo: { origin: "headless" } } },
           { text: "/ultracode off" },
         ])
         yield* step(chat.id)
         expect(yield* reminders(chat.id, injected.id)).toEqual([])
       }),
+    ),
+  )
+
+  it.live("re-asserts on when the toggle goes on, off, then on again within one turn", () =>
+    provideTmpdirInstance(() =>
+      Effect.gen(function* () {
+        const sessions = yield* Session.Service
+        const chat = yield* sessions.create({ title: "flip" })
+        yield* KiloUltracode.set(chat.id, true)
+
+        const turn = yield* seed(chat.id, [{ text: "Refactor the parser" }])
+        yield* step(chat.id)
+        yield* KiloUltracode.set(chat.id, false)
+        yield* step(chat.id)
+        yield* step(chat.id)
+        yield* KiloUltracode.set(chat.id, true)
+        yield* step(chat.id)
+        yield* step(chat.id)
+        expect((yield* reminders(chat.id, turn.id)).map((item) => item.kind)).toEqual([
+          "ultracode",
+          "ultracode-off",
+          "ultracode",
+        ])
+      }),
+    ),
+  )
+
+  it.live("experimental.ultracode_keyword false stops the keyword from opting in", () =>
+    provideTmpdirInstance(
+      () =>
+        Effect.gen(function* () {
+          const sessions = yield* Session.Service
+          const chat = yield* sessions.create({ title: "keyword off" })
+          const typed = yield* seed(chat.id, [{ text: "open src/kilocode/workflow/ultracode.ts" }])
+          yield* step(chat.id)
+          expect(yield* reminders(chat.id, typed.id)).toEqual([])
+
+          // The session toggle still works.
+          yield* KiloUltracode.set(chat.id, true)
+          const next = yield* seed(chat.id, [{ text: "Audit it" }])
+          yield* step(chat.id)
+          expect((yield* reminders(chat.id, next.id)).map((item) => item.kind)).toEqual(["ultracode"])
+        }),
+      { config: { experimental: { ultracode_keyword: false } } },
     ),
   )
 

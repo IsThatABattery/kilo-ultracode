@@ -937,6 +937,7 @@ export const githubRun = Effect.fn("Cli.github.run")(function* (args: { event?: 
                 id: PartID.ascending(),
                 type: "text",
                 text: message,
+                metadata: { kilo: { origin: "headless" } }, // kilocode_change - relayed comment: no ultracode keyword opt-in
               },
               ...files.flatMap((f) => [
                 {

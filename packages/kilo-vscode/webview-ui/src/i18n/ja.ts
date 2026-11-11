@@ -1435,6 +1435,15 @@ export const dict = {
   "workflow.agent.status.error": "失敗",
   "workflow.agent.status.skipped": "スキップ",
   "workflow.agent.status.cached": "キャッシュ",
+  "prompt.workflows.command": "ワークフローの進捗を確認（最新の実行を開く）",
+  "workflow.none": "このセッションにはワークフローの実行がありません",
+  "workflow.large": "大規模なワークフロー",
+  "ui.permission.toolLabel.workflow": "ワークフロー",
+  "ui.permission.workflow.phases": "フェーズ:",
+  "ui.permission.workflow.caution":
+    "ワークフローは多数のエージェントを実行し、通常のターンよりも大幅に多くのトークンを消費することがあります。",
+  "settings.autoApprove.tool.workflow":
+    "動的ワークフローを起動。多数のサブエージェントをバックグラウンドで統括するワークフロースクリプトの実行を許可します。",
   "settings.saveBar.unsavedChanges": "未保存の変更",
   "settings.saveBar.discard": "破棄",
   "settings.saveBar.save": "保存",

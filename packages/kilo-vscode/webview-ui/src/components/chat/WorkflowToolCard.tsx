@@ -3,31 +3,49 @@
  * background run, so the card never shows the script: it shows the workflow's
  * name and description from the tool metadata, then live progress from
  * `workflowRunUpdated` events. Expanding it loads the agent list; an agent with
- * a session opens its transcript the same way the task card does.
+ * a session opens its transcript the same way the task card does. `/workflows`
+ * scrolls to and expands the latest card (revealWorkflow).
  *
  * Call registerWorkflowTool() once at app startup.
  */
 
 import { type Component, createEffect, createMemo, createSignal, For, Index, on, onCleanup, Show } from "solid-js"
 import { ToolRegistry, type ToolProps } from "@kilocode/kilo-ui/message-part"
-import { BasicTool, initialOpen } from "@kilocode/kilo-ui/basic-tool"
+import { BasicTool, initialOpen, rememberOpen } from "@kilocode/kilo-ui/basic-tool"
 import { Icon, type IconProps } from "@kilocode/kilo-ui/icon"
 import { IconButton } from "@kilocode/kilo-ui/icon-button"
 import { Tooltip } from "@kilocode/kilo-ui/tooltip"
 import { showToast } from "@kilocode/kilo-ui/toast"
 import { useI18n } from "@kilocode/kilo-ui/context/i18n"
+import { useConfig } from "../../context/config"
 import { useLanguage } from "../../context/language"
 import { useSession } from "../../context/session"
 import { useVSCode } from "../../context/vscode"
 import { useWorktreeMode } from "../../context/worktree-mode"
 import type { WorkflowAgent, WorkflowAgentStatus, WorkflowRun, WorkflowRunDetail } from "../../types/messages"
 import { openSubagent } from "./open-subagent"
-import { workflowActions, workflowAgents, workflowKey, workflowTerminal, workflowTokens } from "./workflow-tool-state"
+import {
+  workflowActions,
+  workflowAgents,
+  workflowKey,
+  workflowLarge,
+  workflowReload,
+  workflowTerminal,
+  workflowTokens,
+} from "./workflow-tool-state"
 
 // Last known summary per run, so a card the virtualizer remounts starts from it
 // instead of flashing back to the metadata-only state.
 const runs = new Map<string, WorkflowRun>()
-const RELOAD = 1000
+const REVEAL = "revealWorkflow"
+
+/** Scroll the transcript to a workflow card and expand it, mounted or not (`/workflows`). */
+export function revealWorkflow(part: { id: string; messageID: string }) {
+  // A card the virtualizer mounts later restores this; a mounted one hears the event.
+  rememberOpen({ tool: "workflow", partID: part.id }, true)
+  window.dispatchEvent(new CustomEvent(REVEAL, { detail: part.id }))
+  window.dispatchEvent(new CustomEvent("scrollToMessage", { detail: { id: part.messageID, partId: part.id } }))
+}
 
 const ICON: Record<WorkflowAgentStatus, IconProps["name"]> = {
   queued: "dash",
@@ -48,6 +66,7 @@ const WorkflowTool: Component<ToolProps> = (props) => {
   const session = useSession()
   const vscode = useVSCode()
   const worktree = useWorktreeMode()
+  const { config } = useConfig()
 
   const id = () => text(props.metadata.runID)
   const name = () => text(props.metadata.name)
@@ -62,6 +81,12 @@ const WorkflowTool: Component<ToolProps> = (props) => {
   )
   const [busy, setBusy] = createSignal(false)
 
+  const onReveal = (e: Event) => {
+    if ((e as CustomEvent<string>).detail === props.partID) setOpen(true)
+  }
+  window.addEventListener(REVEAL, onReveal)
+  onCleanup(() => window.removeEventListener(REVEAL, onReveal))
+
   const keep = (next: WorkflowRun) => {
     runs.set(next.id, next)
     setRun(next)
@@ -73,11 +98,11 @@ const WorkflowTool: Component<ToolProps> = (props) => {
     if (rid && sid) vscode.postMessage({ type: "requestWorkflowRun", runID: rid, sessionID: sid })
   }
 
-  // Reload the agent list at most once a second while the card is open.
+  // Reload the agent list at most once a second while the card is open, less often for a large run.
   const reload = { timer: undefined as ReturnType<typeof setTimeout> | undefined, at: 0 }
   const schedule = () => {
     if (reload.timer) return
-    const wait = Math.max(0, reload.at + RELOAD - Date.now())
+    const wait = Math.max(0, reload.at + workflowReload(run()) - Date.now())
     reload.timer = setTimeout(() => {
       reload.timer = undefined
       reload.at = Date.now()
@@ -139,6 +164,14 @@ const WorkflowTool: Component<ToolProps> = (props) => {
     ].join(" · ")
   })
 
+  // Only a size guideline the user chose replaces the 25-agent threshold.
+  const large = createMemo(() =>
+    workflowLarge(run(), {
+      ultracode: session.ultracode.current(owner()),
+      size: config().experimental?.workflow_size ? run()?.size : undefined,
+    }),
+  )
+
   const act = (action: "stop" | "pause" | "resume", agent?: string) => (e: MouseEvent) => {
     e.stopPropagation()
     const rid = id()
@@ -165,6 +198,13 @@ const WorkflowTool: Component<ToolProps> = (props) => {
     })
   }
 
+  // Enter or Space on the row itself; a key press on its stop button stays with the button.
+  const press = (e: KeyboardEvent, agent: WorkflowAgent) => {
+    if (e.target !== e.currentTarget || (e.key !== "Enter" && e.key !== " ")) return
+    e.preventDefault()
+    reveal(agent)
+  }
+
   const agents = createMemo(() => workflowAgents(detail()?.list ?? []))
   const phases = () => run()?.phases.filter((phase) => phase.total > 0) ?? []
 
@@ -177,6 +217,12 @@ const WorkflowTool: Component<ToolProps> = (props) => {
         <Show when={description() || progress()}>
           <span data-slot="basic-tool-tool-subtitle" title={progress()}>
             {[description(), progress()].filter(Boolean).join(" — ")}
+          </span>
+        </Show>
+        <Show when={large()}>
+          <span data-slot="workflow-large">
+            <Icon name="warning" size="small" />
+            {language.t("workflow.large")}
           </span>
         </Show>
       </div>
@@ -229,6 +275,7 @@ const WorkflowTool: Component<ToolProps> = (props) => {
         trigger={trigger()}
         defaultOpen={false}
         forceOpen={props.forceOpen}
+        open={open()}
         onOpenChange={setOpen}
       >
         <Show when={run()}>
@@ -270,8 +317,14 @@ const WorkflowTool: Component<ToolProps> = (props) => {
                     data-slot="task-tool-item"
                     data-workflow-agent
                     data-clickable={agent().sessionID ? "true" : undefined}
+                    role={agent().sessionID ? "button" : undefined}
+                    tabIndex={agent().sessionID ? 0 : undefined}
+                    aria-label={
+                      agent().sessionID ? `${language.t("workflow.agent.open")}: ${agent().label}` : undefined
+                    }
                     title={agent().sessionID ? language.t("workflow.agent.open") : undefined}
                     onClick={() => reveal(agent())}
+                    onKeyDown={(e) => press(e, agent())}
                   >
                     <Icon name={ICON[agent().status]} size="small" />
                     <span data-slot="task-tool-title">{agent().label}</span>

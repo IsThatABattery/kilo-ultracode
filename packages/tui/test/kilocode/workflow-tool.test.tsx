@@ -75,12 +75,27 @@ function completed(metadata: Record<string, unknown> = meta) {
   })
 }
 
-function Fixture(props: { part: ToolPart; run?: WorkflowRunInfo; loaded?: boolean; ready: () => void }) {
+function Fixture(props: {
+  part: ToolPart
+  run?: WorkflowRunInfo
+  loaded?: boolean
+  large?: boolean
+  ready: () => void
+}) {
   onMount(props.ready)
-  return <WorkflowCard part={props.part} block={BlockTool} run={props.run} loaded={props.loaded} now={81_000} />
+  return (
+    <WorkflowCard
+      part={props.part}
+      block={BlockTool}
+      run={props.run}
+      loaded={props.loaded}
+      large={props.large}
+      now={81_000}
+    />
+  )
 }
 
-async function render(input: { part: ToolPart; run?: WorkflowRunInfo; loaded?: boolean }) {
+async function render(input: { part: ToolPart; run?: WorkflowRunInfo; loaded?: boolean; large?: boolean }) {
   await using tmp = await tmpdir()
   await Bun.write(`${tmp.path}/kv.json`, JSON.stringify({ animations_enabled: false }))
   const config = createTuiResolvedConfig()
@@ -121,8 +136,9 @@ test("the workflow tool uses its dedicated renderer", () => {
 test("a launched run shows its name, description, live status, progress and phases", async () => {
   const frame = await render({ part: completed(), run })
   expect(frame).toContain("◆ Workflow review-pr — Review the PR from three angles")
-  expect(frame).toContain("paused · 1/3 agents · 12k tok · 1m20s")
+  expect(frame).toContain("paused · 1/3 agents · 12k tok · 1m20s · medium size")
   expect(frame).toContain("Scan 1/2 · Fix 0/1")
+  expect(frame).not.toContain("Large workflow")
   expect(frame).not.toContain("SECRET PROMPT")
   expect(frame).not.toContain("Workflow launched in background")
 })
@@ -160,4 +176,10 @@ test("a failed run shows its error message", async () => {
   })
   expect(frame).toContain("error · 1/3 agents")
   expect(frame).toContain("agent() threw: boom")
+})
+
+test("a large run warns and points to /workflows", async () => {
+  const frame = await render({ part: completed(), run: { ...run, status: "running", agents: 40 }, large: true })
+  expect(frame).toContain("running · 1/40 agents")
+  expect(frame).toContain("Large workflow · /workflows to stop")
 })

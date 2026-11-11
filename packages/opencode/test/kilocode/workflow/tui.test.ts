@@ -4,11 +4,20 @@ import { testRender } from "@opentui/solid"
 import type { JSX } from "solid-js"
 import fs from "node:fs"
 import path from "node:path"
-import type { WorkflowAgentInfo, WorkflowPhaseInfo, WorkflowRunInfo } from "@kilocode/sdk/v2"
+import type { Part, WorkflowAgentInfo, WorkflowPhaseInfo, WorkflowRunInfo } from "@kilocode/sdk/v2"
 import { WorkflowView } from "@/kilocode/cli/cmd/tui/workflow-view"
 import type { TuiPluginApi } from "@kilocode/plugin/tui"
-import Workflows, { owner, permission, root, ultracode } from "@/kilocode/plugins/workflows"
+import Workflows, { owner, permission, root, source, ultracode } from "@/kilocode/plugins/workflows"
 import { MemoryPermissionRegistry } from "@/kilocode/cli/cmd/tui/routes/session/memory-permission"
+import { UltracodeKeyword } from "@tui/kilocode/ultracode-keyword"
+
+async function wait(fn: () => boolean, timeout = 2000) {
+  const start = Date.now()
+  while (!fn()) {
+    if (Date.now() - start > timeout) throw new Error("timed out waiting for condition")
+    await Bun.sleep(5)
+  }
+}
 
 const plugin = path.resolve(import.meta.dir, "../../../src/kilocode/plugins/workflows.tsx")
 
@@ -75,7 +84,9 @@ describe("WorkflowView formatting", () => {
   test("summarizes a run as agents, tokens and elapsed time", () => {
     expect(WorkflowView.summary(run(), 81_000)).toBe("3/10 agents · 12k tok · 1m20s")
     expect(WorkflowView.summary(run({ ended: 31_000 }), 999_999)).toBe("3/10 agents · 12k tok · 30s")
-    expect(WorkflowView.summary(run({ agents: 1, done: 1, tokens: 0, started: Number.NaN }), 5)).toBe("1/1 agent · 0 tok")
+    expect(WorkflowView.summary(run({ agents: 1, done: 1, tokens: 0, started: Number.NaN }), 5)).toBe(
+      "1/1 agent · 0 tok",
+    )
   })
 
   test("summarizes phase progress", () => {
@@ -164,6 +175,51 @@ describe("WorkflowView state", () => {
   })
 })
 
+describe("WorkflowView large-run warning", () => {
+  test("flags more than 25 agents under the default guideline, or an explicit guideline's count", () => {
+    expect(WorkflowView.large(run({ agents: 25, done: 0, tokens: 0 }), { ultracode: false })).toBe(false)
+    expect(WorkflowView.large(run({ agents: 26, done: 0, tokens: 0 }), { ultracode: false })).toBe(true)
+    // `medium` chosen in config: its count (10) replaces 25.
+    expect(
+      WorkflowView.large(run({ agents: 11, done: 0, tokens: 0 }), { configured: "medium", ultracode: false }),
+    ).toBe(true)
+    // A non-default size can only come from config.
+    expect(WorkflowView.large(run({ size: "large", agents: 49, done: 0, tokens: 0 }), { ultracode: false })).toBe(false)
+    expect(WorkflowView.large(run({ size: "large", agents: 51, done: 0, tokens: 0 }), { ultracode: false })).toBe(true)
+    expect(WorkflowView.large(run({ size: "small", agents: 6, done: 0, tokens: 0 }), { ultracode: false })).toBe(true)
+    // `unrestricted` has no count, so 25 stays.
+    expect(
+      WorkflowView.large(run({ size: "unrestricted", agents: 26, done: 0, tokens: 0 }), { ultracode: false }),
+    ).toBe(true)
+    expect(
+      WorkflowView.large(run({ size: "unrestricted", agents: 20, done: 0, tokens: 0 }), { ultracode: false }),
+    ).toBe(false)
+  })
+
+  test("flags a projected token total past 1.5M, scaled from fresh finished agents", () => {
+    // 4 fresh agents spent 400k: 20 scheduled project to 2M.
+    const big = run({ agents: 20, done: 4, cached: 0, tokens: 400_000 })
+    expect(WorkflowView.projected(big)).toBe(2_000_000)
+    expect(WorkflowView.large(big, { ultracode: false })).toBe(true)
+    // Cached replays cost nothing: 2 fresh of 4 done spent 100k, 18 fresh scheduled project to 900k.
+    const replay = run({ agents: 20, done: 4, cached: 2, tokens: 100_000 })
+    expect(WorkflowView.projected(replay)).toBe(900_000)
+    expect(WorkflowView.large(replay, { ultracode: false })).toBe(false)
+    expect(WorkflowView.projected(run({ agents: 5, done: 0, tokens: 1_600_000 }))).toBe(1_600_000)
+  })
+
+  test("never warns with ultracode on", () => {
+    expect(WorkflowView.large(run({ agents: 900, tokens: 9_000_000 }), { ultracode: true })).toBe(false)
+  })
+
+  test("finds the root session through a lookup and survives a cycle", () => {
+    const parents: Record<string, string> = { a: "b", b: "c", x: "y", y: "x" }
+    expect(WorkflowView.root((id) => parents[id], "a")).toBe("c")
+    expect(WorkflowView.root((id) => parents[id], "c")).toBe("c")
+    expect(["x", "y"]).toContain(WorkflowView.root((id) => parents[id], "x"))
+  })
+})
+
 describe("workflows TUI plugin", () => {
   const state = (sessions: Record<string, { parentID?: string; metadata?: Record<string, unknown> }>, cfg = false) =>
     ({
@@ -233,7 +289,7 @@ describe("workflows TUI plugin", () => {
     expect(["ses_a", "ses_b"]).toContain(root(api, "ses_a"))
   })
 
-  test("the workflow permission prompt shows the meta name, description and phases, never the script", async () => {
+  test("the workflow permission prompt shows the meta name, description, phases and the script file", async () => {
     const request = {
       metadata: {
         name: "review-pr",
@@ -272,11 +328,80 @@ describe("workflows TUI plugin", () => {
       const frame = app.captureCharFrame()
       expect(frame).toContain("Review the PR from three angles")
       expect(frame).toContain("Phases: Scan · Fix")
-      expect(frame).not.toContain("review-pr.js")
+      expect(frame).toContain("Script: /repo/.kilo/workflows/review-pr.js")
+      expect(frame).not.toContain("view raw script")
     } finally {
       app.renderer.destroy()
     }
     expect(seen).toEqual({ title: 'Run workflow "review-pr"', icon: "◆" })
+  })
+
+  test("an inline script stays hidden until `v` opens the raw script view", async () => {
+    const script = 'export const meta = { name: "audit", description: "Audit" }\nawait agent("SECRET STEP")'
+    const ctx = await mount({ workflows: true })
+    ctx.parts.msg_1 = [
+      {
+        id: "prt_1",
+        sessionID: "ses_parent",
+        messageID: "msg_1",
+        type: "tool",
+        callID: "call_1",
+        tool: "workflow",
+        state: { status: "running", input: { script }, time: { start: 1 } },
+      },
+    ]
+    const request = {
+      id: "per_2",
+      sessionID: "ses_parent",
+      permission: "workflow",
+      patterns: ["audit"],
+      always: ["audit"],
+      metadata: { name: "audit", description: "Audit", phases: [] },
+      tool: { messageID: "msg_1", callID: "call_1" },
+    }
+    expect(source(ctx.api, request)).toEqual({ script })
+    expect(source(ctx.api, { ...request, tool: undefined })).toEqual({})
+    expect(source(ctx.api, { ...request, metadata: { script: "/tmp/flow.js" } })).toEqual({ file: "/tmp/flow.js" })
+
+    const app = await testRender(() => MemoryPermissionRegistry.render("workflow", request)?.body, {
+      width: 80,
+      height: 12,
+    })
+    try {
+      await app.renderOnce()
+      expect(app.captureCharFrame()).toContain("v view raw script")
+      expect(app.captureCharFrame()).not.toContain("SECRET STEP")
+      const binding = ctx.bindings().find((item) => item.key === "v")
+      if (typeof binding?.cmd !== "function") throw new Error("the raw script binding is not registered")
+      binding.cmd()
+      await app.renderOnce()
+      const frame = app.captureCharFrame()
+      expect(frame).toContain("v hide raw script")
+      expect(frame).toContain('await agent("SECRET STEP")')
+    } finally {
+      app.renderer.destroy()
+    }
+  })
+
+  test("refetches capabilities for this directory's instance disposal only, and tells the prompt keyword", async () => {
+    const ctx = await mount({ workflows: true })
+    expect(UltracodeKeyword.available()).toBe(true)
+    const before = ctx.capabilities()
+    ctx.emit("server.instance.disposed", { properties: { directory: "/repo/.kilo/worktrees/agent-1" } })
+    await Bun.sleep(20)
+    expect(ctx.capabilities()).toBe(before)
+    ctx.emit("server.instance.disposed", { properties: { directory: "/repo" } })
+    await wait(() => ctx.capabilities() > before)
+    ctx.dispose()
+    expect(UltracodeKeyword.available()).toBe(false)
+  })
+
+  test("listens for event stream reconnects from an always-mounted app slot", async () => {
+    // Reconnect itself is exercised against a real SDK provider in packages/tui/test/kilocode/workflow-reconnect.test.tsx
+    // (another test here mocks @tui/context/sdk for the whole process).
+    const ctx = await mount({ workflows: true })
+    expect(typeof ctx.slot("app")).toBe("function")
+    expect(fs.readFileSync(plugin, "utf8")).not.toContain('api.event.on("server.connected"')
   })
 
   test("/ultracode on the home screen creates a session first", async () => {
@@ -309,11 +434,14 @@ describe("workflows TUI plugin", () => {
     expect(content).toContain("session_prompt_right")
     expect(content).toContain("sidebar_content")
     expect(content).toContain('{shown() ? "ultracode" : ""}')
+    expect(content).toContain("<text fg={theme().warning}>{WorkflowView.LARGE}</text>")
   })
 })
 
 type Slot = (ctx: unknown, props: { session_id: string }) => JSX.Element
 type Command = { name: string; title?: string; hidden?: boolean; slashName?: string; run?: () => unknown }
+type Binding = { key: string; cmd?: unknown }
+type Handler = (event: { properties: Record<string, unknown> }) => void
 type Sessions = Record<string, { parentID?: string; workspaceID?: string; metadata?: Record<string, unknown> }>
 
 /** The real plugin against a minimal plugin API: the server answers capabilities and ultracode.set. */
@@ -324,6 +452,11 @@ async function mount(opts: { workflows: boolean; home?: boolean; session?: strin
   const routes: { name: string; params?: Record<string, unknown> }[] = []
   const slots: Record<string, Slot> = {}
   const sessions: Sessions = {}
+  const parts: Record<string, Part[]> = {}
+  const layers: { bindings?: Binding[] }[] = []
+  const handlers: Record<string, Handler[]> = {}
+  const disposers: (() => void)[] = []
+  const fetched = { count: 0 }
   const capabilities = Promise.withResolvers<void>()
   const api = {
     route: {
@@ -332,12 +465,15 @@ async function mount(opts: { workflows: boolean; home?: boolean; session?: strin
     },
     state: {
       config: { experimental: { ultracode: false } },
+      path: { state: "", config: "", worktree: "/repo", directory: "/repo" },
       session: { get: (id: string) => sessions[id] },
+      part: (id: string) => parts[id] ?? [],
     },
     client: {
       experimental: {
         capabilities: {
           get: async () => {
+            fetched.count++
             queueMicrotask(() => capabilities.resolve())
             return { data: { backgroundSubagents: true, workflows: opts.workflows } }
           },
@@ -351,12 +487,30 @@ async function mount(opts: { workflows: boolean; home?: boolean; session?: strin
       },
       session: { create: async () => ({ data: { id: "ses_new" } }) },
     },
-    event: { on: () => () => {} },
-    theme: { current: { textMuted: RGBA.fromHex("#888888"), accent: RGBA.fromHex("#ff00ff") } },
-    lifecycle: { onDispose: () => () => {} },
+    event: {
+      on: (type: string, handler: Handler) => {
+        ;(handlers[type] ??= []).push(handler)
+        return () => {}
+      },
+    },
+    theme: {
+      current: {
+        text: RGBA.fromHex("#ffffff"),
+        textMuted: RGBA.fromHex("#888888"),
+        accent: RGBA.fromHex("#ff00ff"),
+        warning: RGBA.fromHex("#ffaa00"),
+      },
+    },
+    lifecycle: {
+      onDispose: (fn: () => void) => {
+        disposers.push(fn)
+        return () => {}
+      },
+    },
     keymap: {
-      registerLayer: (layer: { commands?: Command[] }) => {
+      registerLayer: (layer: { commands?: Command[]; bindings?: Binding[] }) => {
         commands.push(...(layer.commands ?? []))
+        layers.push(layer)
         return () => {}
       },
     },
@@ -383,5 +537,22 @@ async function mount(opts: { workflows: boolean; home?: boolean; session?: strin
     if (!found) throw new Error(`slot ${name} is not registered`)
     return found
   }
-  return { command, slot, sets, toasts, routes, sessions }
+  return {
+    api,
+    command,
+    slot,
+    sets,
+    toasts,
+    routes,
+    sessions,
+    parts,
+    capabilities: () => fetched.count,
+    bindings: () => layers.flatMap((layer) => layer.bindings ?? []),
+    emit: (type: string, event: { properties: Record<string, unknown> }) => {
+      for (const handler of handlers[type] ?? []) handler(event)
+    },
+    dispose: () => {
+      for (const fn of disposers) fn()
+    },
+  }
 }

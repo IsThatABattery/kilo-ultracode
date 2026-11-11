@@ -1439,6 +1439,15 @@ export const dict = {
   "workflow.agent.status.error": "Mislyktes",
   "workflow.agent.status.skipped": "Hoppet over",
   "workflow.agent.status.cached": "Fra hurtigbuffer",
+  "prompt.workflows.command": "Følg arbeidsflytens fremdrift (åpne den siste kjøringen)",
+  "workflow.none": "Ingen arbeidsflytkjøringer i denne økten",
+  "workflow.large": "Stor arbeidsflyt",
+  "ui.permission.toolLabel.workflow": "Arbeidsflyt",
+  "ui.permission.workflow.phases": "Faser:",
+  "ui.permission.workflow.caution":
+    "En arbeidsflyt kan kjøre mange agenter og bruke betydelig flere tokens enn en vanlig tur.",
+  "settings.autoApprove.tool.workflow":
+    "Start dynamiske arbeidsflyter. Tillater å kjøre et arbeidsflytskript som koordinerer mange underagenter i bakgrunnen.",
   "settings.saveBar.unsavedChanges": "Ulagrede endringer",
   "settings.saveBar.discard": "Forkast",
   "settings.saveBar.save": "Lagre",

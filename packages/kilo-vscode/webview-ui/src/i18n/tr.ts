@@ -1416,6 +1416,15 @@ export const dict = {
   "workflow.agent.status.error": "Başarısız",
   "workflow.agent.status.skipped": "Atlandı",
   "workflow.agent.status.cached": "Önbellekten",
+  "prompt.workflows.command": "İş akışı ilerlemesini izle (son çalıştırmayı aç)",
+  "workflow.none": "Bu oturumda iş akışı çalıştırması yok",
+  "workflow.large": "Büyük iş akışı",
+  "ui.permission.toolLabel.workflow": "İş akışı",
+  "ui.permission.workflow.phases": "Aşamalar:",
+  "ui.permission.workflow.caution":
+    "Bir iş akışı birçok ajan çalıştırabilir ve normal bir turdan çok daha fazla token kullanabilir.",
+  "settings.autoApprove.tool.workflow":
+    "Dinamik iş akışları başlat. Arka planda birçok alt ajanı yöneten bir iş akışı betiği çalıştırmaya izin verir.",
 
   "settings.saveBar.unsavedChanges": "Kaydedilmemiş değişiklikler",
   "settings.saveBar.discard": "Geri Al",

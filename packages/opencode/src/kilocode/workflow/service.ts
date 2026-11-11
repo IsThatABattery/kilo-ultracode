@@ -2,17 +2,21 @@
 // (list/get/stop/pause/resume/stopAgent/save) for the workflow tool, the HTTP routes and the clients.
 //
 // Runs are forked into the instance's InstanceState scope, so they outlive the tool call that launched them and stop
-// when the instance is disposed. They are deliberately NOT BackgroundJobs: the session-centric job cancel paths
-// (tree cancel on Esc, the background-jobs cancel route) would kill or misroute them. Once a run left memory (server
-// restart, instance disposal, retention limit) get and list read its persisted run.json instead.
+// when the instance is disposed (the model is then told from a fresh instance). They are deliberately NOT
+// BackgroundJobs: the session-centric job cancel paths (tree cancel on Esc, the background-jobs cancel route) would
+// kill or misroute them. Once a run left memory (server restart, instance disposal, retention limit) get, list and
+// save read its persisted run directory instead.
 
 import path from "path"
 import { Context, Effect, Layer, Schema, Scope } from "effect"
 import { Global } from "@opencode-ai/core/global"
 import { Database } from "@opencode-ai/core/database/database"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
+import { FSUtil } from "@opencode-ai/core/fs-util"
+import * as Log from "@opencode-ai/core/util/log"
 import { WorkflowEvent } from "@opencode-ai/schema/kilocode/workflow-event"
 import { Agent } from "@/agent/agent"
+import { GlobalBus, type GlobalEvent } from "@/bus/global"
 import { Config } from "@/config/config"
 import { InstanceState } from "@/effect/instance-state"
 import { EventV2Bridge } from "@/event-v2-bridge"
@@ -27,6 +31,7 @@ import { errorMessage } from "@/util/error"
 import { Worktree } from "@/worktree"
 import { SessionDrain } from "@/kilocode/session/drain"
 import { WorkflowArchive } from "./archive"
+import { WorkflowBudget } from "./budget"
 import { WorkflowJournal } from "./journal"
 import { WorkflowMeta } from "./meta"
 import { WorkflowRuntime } from "./runtime"
@@ -35,6 +40,8 @@ import { WorkflowSaved } from "./saved"
 import { WorkflowSpawn } from "./spawn"
 import type { Meta, Ref, RunDetail, RunInfo } from "./types"
 import { KiloWorkflowEnabled } from "./enabled"
+
+const log = Log.create({ service: "workflow.service" })
 
 export namespace KiloWorkflow {
   export class Failure extends Schema.TaggedErrorClass<Failure>()("KiloWorkflow.Failure", {
@@ -50,8 +57,10 @@ export namespace KiloWorkflow {
     sessionID: SessionID
     messageID: MessageID
     agent: string
-    /** Captured from the tool call's ctx.extra.promptOps; used for agents and the completion notification. */
+    /** Captured from the tool call's ctx.extra.promptOps; used for the completion notification (and agents by default). */
     ops: TaskPromptOps
+    /** Prompt ops for the run's agents when they must differ from `ops` (an active goal must not own agent turns). */
+    agents?: TaskPromptOps
     /** Full script source (starts with `export const meta`). */
     script: string
     args: unknown
@@ -101,6 +110,24 @@ export namespace KiloWorkflow {
   /** Finished runs (and budget pools) remembered per instance. */
   const KEEP = 50
 
+  /** Longest wait for a disposed instance to finish before its run's notification boots a fresh one. */
+  const REVIVE = "30 seconds"
+
+  /** True when `file` lies inside `dir` (a filesystem root never counts as a boundary). */
+  const inside = (dir: string, file: string) => path.parse(dir).root !== dir && FSUtil.contains(dir, file)
+
+  /** Completes once `directory`'s instance emitted its disposed event (or after REVIVE). */
+  const gone = (directory: string) =>
+    Effect.callback<void>((resume) => {
+      const handler = (event: GlobalEvent) => {
+        if (event.directory !== directory || event.payload?.type !== "server.instance.disposed") return
+        GlobalBus.off("event", handler)
+        resume(Effect.void)
+      }
+      GlobalBus.on("event", handler)
+      return Effect.sync(() => GlobalBus.off("event", handler))
+    }).pipe(Effect.timeoutOrElse({ duration: REVIVE, orElse: () => Effect.void }))
+
   const read = (file: string) =>
     Effect.tryPromise({
       try: () => Bun.file(file).text(),
@@ -119,6 +146,9 @@ export namespace KiloWorkflow {
     const config = yield* Config.Service
     const drain = yield* SessionDrain.Service
     const events = yield* EventV2Bridge.Service
+    const store = yield* InstanceStore.Service
+    // Lives as long as the service, not an instance: deliveries that must outlast a disposed instance fork here.
+    const scope = yield* Scope.Scope
     const pools = new Map<string, WorkflowRuntime.Pool>()
     // Runs still in flight in any instance, by id: reads (and the resume guard) reach them from every directory.
     const live = new Map<string, WorkflowRuntime.Run>()
@@ -144,6 +174,14 @@ export namespace KiloWorkflow {
           return yield* Effect.fail(new Error("workflow() expects a saved workflow name or { scriptPath }"))
         }
         const file = path.resolve(ctx.directory, ref.scriptPath)
+        // A nested script is never shown in a permission prompt, so it must already be readable without one.
+        if (!inside(ctx.directory, file) && !inside(ctx.worktree, file) && !owned(file)) {
+          return yield* Effect.fail(
+            new Error(
+              `workflow(): scriptPath ${file} is outside the project; only scripts inside the working directory or the workflow run directories can be nested`,
+            ),
+          )
+        }
         return { script: yield* read(file), path: file }
       })
 
@@ -176,6 +214,19 @@ export namespace KiloWorkflow {
         })
       })
 
+    /** Hand `effect` to a fresh instance of `directory` once the current one finished disposing; never blocks. */
+    const revive = (directory: string, effect: Effect.Effect<void>) =>
+      gone(directory).pipe(
+        // The disposed event fires just before the store drops the entry; let it, so a fresh instance loads.
+        Effect.andThen(Effect.sleep("100 millis")),
+        Effect.andThen(store.provide({ directory }, effect)),
+        Effect.catchCause((cause) =>
+          Effect.sync(() => log.error("failed to deliver workflow notification", { cause })),
+        ),
+        Effect.forkIn(scope, { startImmediately: true }),
+        Effect.asVoid,
+      )
+
     const pool = (input: LaunchInput) => {
       if (!input.turn) return { main: input.main, agents: 0 }
       const key = `${input.sessionID}:${input.turn}`
@@ -193,18 +244,50 @@ export namespace KiloWorkflow {
         catch: (err) => new Failure({ detail: errorMessage(err) }),
       })
       const registry = yield* InstanceState.get(state)
+      const ctx = yield* InstanceState.context
+      // The id names a directory: anything but a run id could reach another session's run (or anywhere else).
+      if (input.resume !== undefined && !WorkflowRuntime.ID.test(input.resume)) {
+        return yield* new Failure({
+          detail: `Workflow run ${input.resume} has nothing to resume: it is not a workflow run ID (resume works only for runs of this session)`,
+        })
+      }
       const id = input.resume ?? WorkflowRuntime.id()
       const target = dir(input.sessionID, id)
+      if (path.dirname(path.resolve(target)) !== path.join(root(), input.sessionID)) {
+        return yield* new Failure({ detail: `Workflow run ${id} has nothing to resume: invalid run directory` })
+      }
       const prior = registry.runs.get(id) ?? live.get(id)
+      // A stopped run still counts until its agents exited and its journal is final: both runs share the directory.
       const active = (run?: WorkflowRuntime.Run) => {
-        if (!run || WorkflowRuntime.terminal(run.info().status)) return undefined
+        if (!run || run.settled()) return undefined
+        const status = run.info().status
+        if (WorkflowRuntime.terminal(status)) {
+          return new Failure({
+            detail: `Workflow run ${id} is still stopping; its agents have not exited yet. Try again shortly.`,
+          })
+        }
         return new Failure({
-          detail: `Workflow run ${id} is still ${run.info().status}. Stop it first (from /workflows) before resuming.`,
+          detail: `Workflow run ${id} is still ${status}. Stop it first (from /workflows) before resuming.`,
         })
       }
       const busy = active(prior)
       if (busy) return yield* busy
-      const journal = input.resume ? yield* WorkflowJournal.load(path.join(target, WorkflowJournal.FILE)) : undefined
+      if (input.resume && !prior) {
+        // Only a run another live process owns reads back as unfinished (see WorkflowArchive.read).
+        const persisted = yield* WorkflowArchive.read(target)
+        if (persisted && !WorkflowRuntime.terminal(persisted.status)) {
+          return yield* new Failure({
+            detail: `Workflow run ${id} is still ${persisted.status} in another Kilo process. Stop it there before resuming.`,
+          })
+        }
+      }
+      // A staged journal is what a resumed run wrote before it was hard-killed; it never replaced the journal.
+      const journal = input.resume
+        ? WorkflowJournal.recover(
+            yield* WorkflowJournal.load(path.join(target, WorkflowJournal.FILE)),
+            yield* WorkflowJournal.load(path.join(target, WorkflowJournal.STAGED)),
+          )
+        : undefined
       if (input.resume && !journal) {
         return yield* new Failure({
           detail: `Workflow run ${id} has nothing to resume: no journal at ${path.join(target, WorkflowJournal.FILE)} (resume works only for runs of this session)`,
@@ -222,13 +305,23 @@ export namespace KiloWorkflow {
           warm,
           publish: (info) => events.publish(WorkflowEvent.Updated, { run: info }),
           notify: (text) => notify(input, text),
+          orphan: (text) => revive(ctx.directory, notify(input, text)),
           hold: () => drain.hold(input.sessionID),
+          usage: (sessionID) => WorkflowSpawn.usage(sessions, SessionID.make(sessionID)),
+          main: () => {
+            const turn = input.turn
+            if (!turn) return Effect.succeed(input.main)
+            return sessions.messages({ sessionID: input.sessionID }).pipe(
+              Effect.map((messages) => WorkflowBudget.since(messages, turn)),
+              Effect.catch(() => Effect.succeed(0)),
+            )
+          },
         },
         {
           id,
           dir: target,
           parent: { sessionID: input.sessionID, messageID: input.messageID, agent: input.agent },
-          ops: input.ops,
+          ops: input.agents ?? input.ops,
           script: input.script,
           parsed,
           args: input.args,
@@ -254,7 +347,8 @@ export namespace KiloWorkflow {
       return { info: run.info(), meta: parsed.meta, dir: target, script: path.join(target, "script.js") }
     })
 
-    const find = (runID: string) => InstanceState.use(state, (registry) => registry.runs.get(runID))
+    // This instance's runs, then those still in flight in another instance (lists show both).
+    const find = (runID: string) => InstanceState.use(state, (registry) => registry.runs.get(runID) ?? live.get(runID))
 
     const list = Effect.fn("KiloWorkflow.list")(function* (sessionID?: string) {
       const registry = yield* InstanceState.get(state)
@@ -273,7 +367,7 @@ export namespace KiloWorkflow {
     })
 
     const get = Effect.fn("KiloWorkflow.get")(function* (runID: string) {
-      const run = (yield* find(runID)) ?? live.get(runID)
+      const run = yield* find(runID)
       if (run) return run.detail()
       return yield* WorkflowArchive.get(root(), runID)
     })
@@ -294,9 +388,13 @@ export namespace KiloWorkflow {
 
     const save = Effect.fn("KiloWorkflow.save")(function* (runID: string, input: { scope: "project" | "global" }) {
       const run = yield* find(runID)
-      if (!run) return undefined
+      // A persisted run (restart, reload, retention limit) still has its script; the directory is rebuilt from its
+      // ids rather than trusting the dir recorded in run.json.
+      const archived = run ? undefined : yield* WorkflowArchive.get(root(), runID)
+      const where = run ? run.dir : archived ? dir(archived.sessionID, archived.id) : undefined
+      if (!where) return undefined
       const ctx = yield* InstanceState.context
-      const file = path.join(run.dir, "script.js")
+      const file = path.join(where, "script.js")
       const script = yield* read(file).pipe(Effect.mapError((err) => new Failure({ detail: err.message })))
       // The model may have edited script.js since launch, so the name comes from the file being saved.
       const parsed = yield* Effect.try({

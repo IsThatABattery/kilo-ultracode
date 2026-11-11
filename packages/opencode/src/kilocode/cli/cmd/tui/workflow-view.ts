@@ -3,6 +3,7 @@
 // shared by packages/opencode plugins and packages/tui renderers and tested directly.
 
 import type { WorkflowAgentInfo, WorkflowPhaseInfo, WorkflowRunInfo } from "@kilocode/sdk/v2"
+import { KiloWorkflowEnabled } from "@/kilocode/workflow/enabled"
 
 type Run = Pick<
   WorkflowRunInfo,
@@ -27,6 +28,54 @@ export namespace WorkflowView {
     const enabled = (value as { enabled?: unknown }).enabled
     return typeof enabled === "boolean" ? enabled : fallback
   }
+
+  /** The root of a session's parent chain (ultracode lives on root sessions); survives a parent cycle. */
+  export function root(parent: (sessionID: string) => string | undefined, sessionID: string) {
+    const seen = new Set<string>()
+    let current = sessionID
+    while (!seen.has(current)) {
+      seen.add(current)
+      const next = parent(current)
+      if (!next) return current
+      current = next
+    }
+    return current
+  }
+
+  /** Agent count past which Claude Code flags a run as large, unless a size guideline was chosen explicitly. */
+  export const LARGE_AGENTS = 25
+
+  /** Projected token total past which a run is flagged as large. */
+  export const LARGE_TOKENS = 1_500_000
+
+  /**
+   * Projected token total: tokens so far, scaled from the agents that finished fresh (cached replays cost nothing) to
+   * every fresh agent the run has scheduled.
+   */
+  export function projected(run: Pick<Run, "agents" | "done" | "tokens"> & { cached: number }) {
+    const fresh = run.done - run.cached
+    if (fresh <= 0) return run.tokens
+    return Math.max(run.tokens, (run.tokens / fresh) * (run.agents - run.cached))
+  }
+
+  /**
+   * Claude Code's `Large workflow` warning: more agents than 25 (or than an explicitly chosen size guideline's count),
+   * or a projected token total past 1.5M. Never shown with ultracode on, which already opts in to large runs.
+   * `configured` is `experimental.workflow_size`; the server falls back to `medium` when it is unset, so only a
+   * `medium` run can come from the default guideline.
+   */
+  export function large(
+    run: Pick<Run, "agents" | "done" | "tokens"> & { cached: number; size: WorkflowRunInfo["size"] },
+    opts: { configured?: WorkflowRunInfo["size"]; ultracode: boolean },
+  ) {
+    if (opts.ultracode) return false
+    const explicit = run.size !== "medium" || opts.configured === "medium"
+    const limit = explicit && run.size !== "unrestricted" ? KiloWorkflowEnabled.LIMITS[run.size] : LARGE_AGENTS
+    return run.agents > limit || projected(run) > LARGE_TOKENS
+  }
+
+  /** The warning line shown with a large run's progress. */
+  export const LARGE = "Large workflow · /workflows to stop"
 
   /** Epoch-millisecond timestamp, or undefined for anything that is not a finite number (missing, older servers). */
   export function time(value: unknown) {

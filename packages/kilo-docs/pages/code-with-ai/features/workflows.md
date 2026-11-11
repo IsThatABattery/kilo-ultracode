@@ -94,7 +94,9 @@ The ultracode switch and `/ultracode` are hidden when dynamic workflows are turn
 
 ### The `ultracode` keyword
 
-Typing the word `ultracode` anywhere in a message opts in for that message only, without changing the session switch. Only text you type counts: slash commands such as `/ultracode`, command templates, and text Kilo adds to the conversation do not.
+Typing the word `ultracode` anywhere in a message opts in for that message only, without changing the session switch. Only text you type counts: slash commands such as `/ultracode`, command templates, and text Kilo adds to the conversation do not. Neither does a prompt passed to `kilo run` or a GitHub comment that the Kilo GitHub action relays.
+
+To stop the keyword from opting in at all, set `experimental.ultracode_keyword` to `false`. The ultracode switch and `/ultracode` keep working.
 
 ## Watching and controlling runs
 
@@ -301,6 +303,7 @@ Set these keys in `kilo.jsonc`:
 |---|---|---|
 | `experimental.workflows` | `true` | Set to `false` to turn off dynamic workflows: the `workflow` tool, the `workflow-authoring` skill, saved workflow commands, and ultracode |
 | `experimental.ultracode` | `false` | Start every session with ultracode on |
+| `experimental.ultracode_keyword` | `true` | Set to `false` so the word `ultracode` in a message no longer opts in to a workflow |
 | `experimental.workflow_size` | `"medium"` | Size guideline: `small` (fewer than 5 agents), `medium` (fewer than 10), `large` (fewer than 50), or `unrestricted` (no guideline) |
 | `permission.workflow` | `"ask"` | Whether starting a workflow asks for approval, runs without asking, or is blocked. Accepts workflow names as patterns |
 

@@ -36,7 +36,10 @@ const start = (message: Extract<WorkflowProtocol.Inbound, { type: "start" }>) =>
   if (state.started) return
   state.started = true
   try {
-    const context = vm.createContext({}, { codeGeneration: { strings: false, wasm: false } })
+    // A null-prototype sandbox: Bun resolves context-global lookups that miss through the object passed here, so a
+    // plain `{}` would hand script code host-realm members (`constructor`, `valueOf`, `__proto__`, ...) whose
+    // constructor chain reaches the host's Function, which `codeGeneration: { strings: false }` does not cover.
+    const context = vm.createContext(Object.create(null), { codeGeneration: { strings: false, wasm: false } })
     const install = vm.runInContext(`"use strict";(${prelude.toString()})`, context, {
       filename: WorkflowProtocol.PRELUDE,
     }) as typeof prelude

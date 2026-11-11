@@ -1436,6 +1436,15 @@ export const dict = {
   "workflow.agent.status.error": "ناموفق",
   "workflow.agent.status.skipped": "رد شد",
   "workflow.agent.status.cached": "از حافظه پنهان",
+  "prompt.workflows.command": "مشاهده پیشرفت گردش کار (باز کردن آخرین اجرا)",
+  "workflow.none": "هیچ اجرای گردش کاری در این جلسه وجود ندارد",
+  "workflow.large": "گردش کار بزرگ",
+  "ui.permission.toolLabel.workflow": "گردش کار",
+  "ui.permission.workflow.phases": "مراحل:",
+  "ui.permission.workflow.caution":
+    "یک گردش کار می‌تواند عامل‌های زیادی را اجرا کند و توکن‌های بسیار بیشتری از یک نوبت عادی مصرف کند.",
+  "settings.autoApprove.tool.workflow":
+    "راه‌اندازی گردش‌های کار پویا. اجازه اجرای اسکریپت گردش کاری را می‌دهد که در پس‌زمینه عامل‌های فرعی زیادی را هماهنگ می‌کند.",
 
   "settings.saveBar.unsavedChanges": "تغییرات ذخیره‌نشده",
   "settings.saveBar.discard": "رد کردن",

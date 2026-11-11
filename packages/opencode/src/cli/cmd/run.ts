@@ -1108,7 +1108,9 @@ export const RunCommand = effectCmd({
                       agent,
                       model: pick(args.model),
                       variant: args.variant,
-                      parts: [...files, { type: "text", text: message }],
+                      // kilocode_change start - a headless prompt is not human-typed: no ultracode keyword opt-in
+                      parts: [...files, { type: "text", text: message, metadata: { kilo: { origin: "headless" } } }],
+                      // kilocode_change end
                     }),
             )
             if (result.error) {

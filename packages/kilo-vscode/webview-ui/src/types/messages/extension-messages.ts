@@ -90,7 +90,7 @@ import type {
 } from "./migration"
 import type { MemoryEventMessage, MemoryLoadedMessage, MemoryOperationResultMessage } from "./memory"
 import type { SessionBoardLoadedMessage } from "./board"
-import type { WorkflowRunLoadedMessage, WorkflowRunUpdatedMessage } from "./workflow"
+import type { UltracodeSavedMessage, WorkflowRunLoadedMessage, WorkflowRunUpdatedMessage } from "./workflow"
 
 // ============================================
 // Messages FROM extension TO webview
@@ -2031,4 +2031,5 @@ export type ExtensionMessage =
   | BackgroundJobsLoadedMessage
   | WorkflowRunUpdatedMessage
   | WorkflowRunLoadedMessage
+  | UltracodeSavedMessage
   | SessionBoardLoadedMessage

@@ -17,25 +17,25 @@ describe("WorkflowEffort.pick", () => {
     ["max", anthropic, "max"],
     ["high", budget, "high"],
     ["low", openai, "low"],
-    // nearest ladder key; ties prefer the stronger variant
-    ["xhigh", anthropic46, "max"],
+    // Claude Code: the highest supported level at or below the request ("xhigh runs as high on Opus 4.6")
+    ["xhigh", anthropic46, "high"],
     ["max", openai, "xhigh"],
     ["max", ["low", "medium", "high"], "high"],
-    ["medium", gemini3, "high"],
+    ["medium", gemini3, "low"],
     ["high", ["none", "low"], "low"],
+    ["max", ["high"], "high"],
+    // never escalated: nothing at or below the request means the provider default
+    ["low", ["none", "minimal", "medium", "high"], undefined],
+    ["low", budget, undefined],
+    ["medium", budget, undefined],
+    ["low", ["high"], undefined],
     // none/minimal never stand in for a request: they turn reasoning off
-    ["low", ["none", "minimal", "medium", "high"], "medium"],
     ["low", ["minimal"], undefined],
     ["high", ["none"], undefined],
     // {none, thinking} toggles: thinking for medium and above only
     ["medium", toggle, "thinking"],
     ["max", toggle, "thinking"],
     ["low", toggle, undefined],
-    // cheap requests are not escalated more than one rung onto budget-only models
-    ["low", budget, undefined],
-    ["medium", budget, "high"],
-    ["low", ["high"], undefined],
-    ["max", ["high"], "high"],
     // nothing to map onto, arbitrary keys, unknown efforts
     ["high", [], undefined],
     ["high", ["fast", "smart"], undefined],

@@ -11,6 +11,7 @@ type Receive = (message: unknown) => Promise<void>
 type Internals = {
   webview: { postMessage: (message: unknown) => Promise<unknown> } | null
   trackedSessionIds: Set<string>
+  syncedChildSessions: Set<string>
   sessionDirectories: Map<string, string>
   sessionGitDirectories: Map<string, string>
   currentSession: Session | null
@@ -126,6 +127,17 @@ function message(sessionID: string): Event {
   return {
     type: "message.updated",
     properties: { sessionID, info: { id: `msg_${sessionID}`, sessionID, role: "user", time: { created: 1 } } },
+  } as Event
+}
+
+function part(sessionID: string, value: Record<string, unknown>): Event {
+  return {
+    type: "message.part.updated",
+    properties: {
+      sessionID,
+      part: { id: `prt_${String(value.type)}`, sessionID, messageID: `msg_${sessionID}`, ...value },
+      time: 1,
+    },
   } as Event
 }
 
@@ -248,12 +260,12 @@ describe("KiloProvider workflow sessions", () => {
       message("ses_agent"),
     ]
     for (const event of events) state.service.emit(event as Event, tree)
-    expect(state.sent.map((message) => message.type)).toEqual([
-      "permissionRequest",
-      "questionRequest",
-      "sessionStatus",
-      "messageCreated",
-    ])
+    // Nobody views the agent yet, so its transcript stays on the backend.
+    expect(state.sent.map((message) => message.type)).toEqual(["permissionRequest", "questionRequest", "sessionStatus"])
+    // Opened in an inspector tab, its transcript streams from its worktree.
+    state.internal.syncedChildSessions.add("ses_agent")
+    state.service.emit(message("ses_agent"), tree)
+    expect(state.sent.map((message) => message.type).at(-1)).toBe("messageCreated")
 
     // Other sessions in that worktree and the agent's events from other directories stay filtered.
     state.service.emit(permission("ses_other", "per-2"), tree)
@@ -266,6 +278,7 @@ describe("KiloProvider workflow sessions", () => {
     const dirs = [home]
     const state = await setup({ opts: manager(dirs) })
     state.service.emit(created("ses_agent", "ses_parent", flow, tree), tree)
+    state.internal.syncedChildSessions.add("ses_agent")
     // The parent's project goes inactive: transcript events stop, activity events still pass.
     dirs.length = 0
     state.sent.length = 0
@@ -319,7 +332,7 @@ describe("KiloProvider workflow sessions", () => {
     ])
   })
 
-  it("keeps a released worktree agent in its own worktree when it is synced again", async () => {
+  it("keeps a released agent tracked, so a prompt it asks after its tab closes still shows", async () => {
     const dirs: Array<string | undefined> = []
     const client = {
       session: {
@@ -336,15 +349,70 @@ describe("KiloProvider workflow sessions", () => {
     const state = await setup({ opts: manager(), client })
     state.service.emit(created("ses_agent", "ses_parent", flow, tree), tree)
     await state.internal.handleSyncSession("ses_agent", "ses_parent")
+    // The inspector tab closes while the agent still runs.
     state.internal.releaseChildSession("ses_agent")
-    expect(state.internal.trackedSessionIds.has("ses_agent")).toBe(false)
+    expect(state.internal.syncedChildSessions.has("ses_agent")).toBe(false)
+    expect(state.internal.trackedSessionIds.has("ses_agent")).toBe(true)
+    expect(state.internal.sessionDirectories.get("ses_agent")).toBe(tree)
+    state.sent.length = 0
+    state.service.emit(permission("ses_agent"), tree)
+    state.service.emit(
+      { type: "question.asked", properties: { id: "que-1", sessionID: "ses_agent", questions: [] } } as Event,
+      tree,
+    )
+    state.service.emit(message("ses_agent"), tree)
+    expect(state.sent.map((message) => message.type)).toEqual(["permissionRequest", "questionRequest"])
 
+    // Opened again, it reloads from its own worktree.
     await state.internal.handleSyncSession("ses_agent", "ses_parent")
     expect(state.internal.sessionDirectories.get("ses_agent")).toBe(tree)
     expect(dirs).toEqual([tree, tree, tree, tree])
+  })
+
+  it("streams only the parts of an unviewed agent that matter outside its transcript", async () => {
+    const state = await setup()
+    const synced: Array<[string, string | undefined]> = []
+    state.internal.handleSyncSession = async (sessionID, parentSessionID) => {
+      synced.push([sessionID, parentSessionID])
+    }
+    state.service.emit(created("ses_agent", "ses_parent", flow, home), home)
     state.sent.length = 0
-    state.service.emit(permission("ses_agent"), tree)
-    expect(state.sent.map((message) => message.type)).toEqual(["permissionRequest"])
+    state.service.emit(message("ses_agent"), home)
+    state.service.emit(part("ses_agent", { type: "text", text: "thinking out loud" }), home)
+    state.service.emit(
+      { type: "session.updated", source: "sync", properties: { sessionID: "ses_agent", info: {} } } as unknown as Event,
+      home,
+    )
+    expect(state.sent).toEqual([])
+
+    // A finished step refreshes model usage; a nested task child gets tracked for its own prompts.
+    state.service.emit(part("ses_agent", { type: "step-finish", tokens: {} }), home)
+    state.service.emit(
+      part("ses_agent", {
+        type: "tool",
+        tool: "task",
+        state: { status: "running", metadata: { sessionId: "ses_nested" } },
+      }),
+      home,
+    )
+    expect(state.sent).toEqual([{ type: "sessionModelUsageChanged", sessionID: "ses_agent" }])
+    expect(synced).toEqual([["ses_nested", "ses_agent"]])
+  })
+
+  it("forgets a deleted agent", async () => {
+    const state = await setup()
+    state.service.emit(created("ses_agent", "ses_parent", flow, home), home)
+    state.service.emit(
+      {
+        type: "session.deleted",
+        properties: { sessionID: "ses_agent", info: info("ses_agent", "ses_parent", home, flow) },
+      } as Event,
+      home,
+    )
+    expect(state.internal.trackedSessionIds.has("ses_agent")).toBe(false)
+    state.sent.length = 0
+    state.service.emit(permission("ses_agent"), home)
+    expect(state.sent).toEqual([])
   })
 
   it("opens a worktree agent's viewer in its own worktree", async () => {

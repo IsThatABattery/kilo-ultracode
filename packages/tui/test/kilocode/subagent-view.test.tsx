@@ -34,6 +34,7 @@ import { tmpdir } from "../fixture/fixture"
 import { TestTuiContexts } from "../fixture/tui-environment"
 import { createTuiResolvedConfig } from "../fixture/tui-runtime"
 import { createFetch, directory, eventSource, json } from "../fixture/tui-sdk"
+import { UltracodeKeyword } from "../../src/kilocode/ultracode-keyword"
 
 const parent = {
   id: "ses_parent",
@@ -385,4 +386,43 @@ test("the main prompt's exit guard uses the same double press", async () => {
   await scene.press("\x03")
   expect(scene.exits).toHaveLength(1)
   expect(scene.frame()).not.toContain("again to exit")
+})
+
+test("the main prompt highlights the ultracode keyword and Alt+W dismisses it for that prompt", async () => {
+  await using tmp = await tmpdir()
+  UltracodeKeyword.report(true)
+  using scene = await mount(tmp.path, 100, { route: parent.id })
+  try {
+    // The keyword gets its own highlighted span; the rest of the line keeps the text color.
+    const spans = () =>
+      scene
+        .spans()
+        .lines.find((item) =>
+          item.spans
+            .map((span) => span.text)
+            .join("")
+            .includes("please ultracode this"),
+        )
+        ?.spans.map((span) => ({ text: span.text, fg: [span.fg.r, span.fg.g, span.fg.b] })) ?? []
+    await scene.press("please ultracode this")
+    const keyword = spans().find((item) => item.text === "ultracode")
+    const plain = spans().find((item) => item.text.includes("please"))
+    expect(keyword).toBeDefined()
+    expect(keyword?.fg).not.toEqual(plain?.fg)
+    await scene.press("\x1bw")
+    expect(scene.frame()).toContain("please ultracode this")
+    expect(spans().find((item) => item.text === "ultracode")).toBeUndefined()
+    // A cleared prompt highlights again; backspace right after the keyword dismisses it without deleting.
+    await scene.press("\x03")
+    await scene.press("please ultracode")
+    await scene.press(" this")
+    await scene.press("\x1b[D".repeat(5))
+    expect(spans().find((item) => item.text === "ultracode")).toBeDefined()
+    await scene.press("\x7f")
+    expect(scene.frame()).toContain("please ultracode this")
+    expect(spans().find((item) => item.text === "ultracode")).toBeUndefined()
+    await scene.press("\x03")
+  } finally {
+    UltracodeKeyword.report(false)
+  }
 })

@@ -61,13 +61,14 @@ export namespace KiloUltracode {
 
   /**
    * True when a human-typed text part mentions the keyword. Synthetic, ignored, and Kilo-injected text (slash-command
-   * templates, composed prompts) never counts, nor does text that is itself a slash command (`/ultracode off`).
+   * templates, composed prompts) never counts, nor does headless text (`kilo run` prompts, relayed GitHub comments),
+   * text whose keyword the user dismissed in the prompt (`noUltracode`), or text that is itself a slash command.
    */
   export function keyword(parts: ReadonlyArray<Part>) {
     return parts.some((part) => {
       if (part.type !== "text" || !part.text) return false
       if (part.synthetic || part.ignored) return false
-      if (injected(part.metadata)) return false
+      if (exempt(part.metadata)) return false
       if (part.text.trimStart().startsWith("/")) return false
       return KEYWORD.test(part.text)
     })
@@ -78,10 +79,11 @@ export namespace KiloUltracode {
     return !session.parentID && !session.metadata?.[WORKFLOW]
   }
 
-  function injected(metadata: Record<string, unknown> | undefined) {
+  function exempt(metadata: Record<string, unknown> | undefined) {
     const kilo = metadata?.kilo
     if (!kilo || typeof kilo !== "object") return false
-    return !!(kilo as { injected?: unknown }).injected
+    const value = kilo as { injected?: unknown; origin?: unknown; noUltracode?: unknown }
+    return !!value.injected || value.origin === "headless" || value.noUltracode === true
   }
 
   function reminder(part: SessionV1.Part): Reminder | undefined {
@@ -110,8 +112,9 @@ export namespace KiloUltracode {
 
   /**
    * Add this turn's ultracode reminder to the last user message (persisted, deduplicated by metadata, so steps of
-   * the same turn and later turns keep identical history for the prompt cache). Config and runtime flags come from
-   * the reminder call site; without them (isolated reminder tests) nothing is added.
+   * the same turn and later turns keep identical history for the prompt cache). On and off dedupe by the newest
+   * state, so a toggle made on, off, then on again within one turn re-asserts on. Config and runtime flags come
+   * from the reminder call site; without them (isolated reminder tests) nothing is added.
    */
   export const apply = Effect.fn("KiloUltracode.apply")(function* (input: {
     messages: SessionV1.WithParts[]
@@ -130,9 +133,8 @@ export namespace KiloUltracode {
     const sessions = yield* Session.Service
     // The loop reads the session once per turn; re-read so a toggle made mid-turn applies on the next step.
     const fresh = yield* sessions.get(input.session.id).pipe(Effect.orElseSucceed(() => input.session))
-    const present = new Set(input.user.parts.map(reminder))
+    const kinds = input.user.parts.map(reminder)
     const add = Effect.fn("KiloUltracode.add")(function* (kind: Reminder, text: string) {
-      if (present.has(kind)) return
       const part = yield* sessions.updatePart({
         id: PartID.ascending(),
         messageID: input.user.info.id,
@@ -143,11 +145,16 @@ export namespace KiloUltracode {
         metadata: { kilo: { reminder: kind } },
       })
       input.user.parts.push(part)
-      present.add(kind)
     })
 
-    if (enabled(fresh, cfg, flags.value)) return yield* add("ultracode", WorkflowPrompts.ULTRACODE_ON)
+    if (enabled(fresh, cfg, flags.value)) {
+      const last = kinds.findLast((kind) => kind === "ultracode" || kind === "ultracode-off")
+      if (last !== "ultracode") yield* add("ultracode", WorkflowPrompts.ULTRACODE_ON)
+      return
+    }
     if (latest(input.messages) === "ultracode") yield* add("ultracode-off", WorkflowPrompts.ULTRACODE_OFF)
+    if (cfg.experimental?.ultracode_keyword === false) return
+    if (kinds.includes("ultracode-keyword")) return
     if (keyword(input.user.parts)) yield* add("ultracode-keyword", WorkflowPrompts.ULTRACODE_KEYWORD)
   })
 }

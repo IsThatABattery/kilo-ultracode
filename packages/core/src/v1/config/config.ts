@@ -360,6 +360,10 @@ export const Info = Schema.Struct({
         description:
           "Start every session with ultracode on, so the agent plans a multi-agent workflow for each substantive task (default: false)",
       }),
+      ultracode_keyword: Schema.optional(Schema.Boolean).annotate({
+        description:
+          "Let the word ultracode in a typed message opt that message in to a multi-agent workflow (default: true)",
+      }),
       workflow_size: Schema.optional(Schema.Literals(["small", "medium", "large", "unrestricted"])).annotate({
         description:
           "Advisory size guideline for dynamic workflows: small (<5 agents), medium (<10), large (<50) or unrestricted (default: medium)",

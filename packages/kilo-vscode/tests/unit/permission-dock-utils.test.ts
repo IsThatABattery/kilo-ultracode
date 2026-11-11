@@ -1,5 +1,10 @@
 import { describe, it, expect } from "bun:test"
-import { displaySkillCommand, savedRuleStates } from "../../webview-ui/src/components/chat/permission-dock-utils"
+import {
+  describePatterns,
+  displaySkillCommand,
+  savedRuleStates,
+  workflowPhases,
+} from "../../webview-ui/src/components/chat/permission-dock-utils"
 
 describe("displaySkillCommand", () => {
   it("leaves ordinary commands, including astral characters, untouched", () => {
@@ -80,5 +85,27 @@ describe("savedRuleStates", () => {
   it("returns empty map for empty config object", () => {
     const result = savedRuleStates(["npm *"], {})
     expect(result).toEqual({})
+  })
+})
+
+describe("workflowPhases", () => {
+  it("lists a workflow launch's planned phases with their details", () => {
+    const args = { name: "review", phases: [{ title: "Find", detail: "one agent per file" }, { title: "Verify" }] }
+    expect(workflowPhases(args)).toEqual([
+      { title: "Find", detail: "one agent per file" },
+      { title: "Verify", detail: undefined },
+    ])
+  })
+
+  it("drops malformed entries from the script's metadata", () => {
+    const args = { phases: [null, "Find", { title: "" }, { title: 3 }, { title: "Fix", detail: 7 }] }
+    expect(workflowPhases(args)).toEqual([{ title: "Fix", detail: undefined }])
+    expect(workflowPhases({ phases: "Find" })).toEqual([])
+    expect(workflowPhases({})).toEqual([])
+  })
+
+  it("labels the launch with the workflow's name", () => {
+    const t = (key: string) => (key === "ui.permission.toolLabel.workflow" ? "Workflow" : key)
+    expect(describePatterns("workflow", ["review"], t)).toEqual({ kind: "single", text: "Workflow review" })
   })
 })

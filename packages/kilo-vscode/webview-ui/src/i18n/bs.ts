@@ -1447,6 +1447,15 @@ export const dict = {
   "workflow.agent.status.error": "Neuspješno",
   "workflow.agent.status.skipped": "Preskočeno",
   "workflow.agent.status.cached": "Iz keša",
+  "prompt.workflows.command": "Prati napredak toka rada (otvori posljednje pokretanje)",
+  "workflow.none": "Nema pokretanja toka rada u ovoj sesiji",
+  "workflow.large": "Veliki tok rada",
+  "ui.permission.toolLabel.workflow": "Tok rada",
+  "ui.permission.workflow.phases": "Faze:",
+  "ui.permission.workflow.caution":
+    "Tok rada može pokrenuti mnogo agenata i potrošiti znatno više tokena od običnog poteza.",
+  "settings.autoApprove.tool.workflow":
+    "Pokretanje dinamičkih tokova rada. Omogućava pokretanje skripte toka rada koja u pozadini koordinira mnogo podagenata.",
   "settings.saveBar.unsavedChanges": "Nespremljene promjene",
   "settings.saveBar.discard": "Odbaci",
   "settings.saveBar.save": "Spremi",

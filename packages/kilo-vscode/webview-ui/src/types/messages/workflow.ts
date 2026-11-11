@@ -7,6 +7,9 @@ export type WorkflowStatus = "running" | "paused" | "completed" | "error" | "sto
 
 export type WorkflowAgentStatus = "queued" | "running" | "completed" | "error" | "skipped" | "cached"
 
+/** Size guideline in force when the run launched (`experimental.workflow_size`, default medium). */
+export type WorkflowSize = "small" | "medium" | "large" | "unrestricted"
+
 export interface WorkflowPhase {
   title: string
   detail?: string
@@ -32,6 +35,7 @@ export interface WorkflowRun {
   cached: number
   tokens: number
   tools: number
+  size: WorkflowSize
   started: number
   ended?: number
   dir: string
@@ -95,4 +99,12 @@ export interface WorkflowRunLoadedMessage {
   runID: string
   run?: WorkflowRunDetail
   error?: string
+}
+
+/** A setUltracode request finished; once the last one is stored, the session's stored value takes over. */
+export interface UltracodeSavedMessage {
+  type: "ultracodeSaved"
+  sessionID: string
+  /** False when the backend did not store it (an error, or no connection). */
+  ok: boolean
 }

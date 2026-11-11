@@ -1441,6 +1441,15 @@ export const dict = {
   "workflow.agent.status.error": "Mislykkedes",
   "workflow.agent.status.skipped": "Sprunget over",
   "workflow.agent.status.cached": "Fra cache",
+  "prompt.workflows.command": "Følg workflowets fremskridt (åbn den seneste kørsel)",
+  "workflow.none": "Ingen workflow-kørsler i denne session",
+  "workflow.large": "Stort workflow",
+  "ui.permission.toolLabel.workflow": "Workflow",
+  "ui.permission.workflow.phases": "Faser:",
+  "ui.permission.workflow.caution":
+    "Et workflow kan køre mange agenter og bruge betydeligt flere tokens end en normal tur.",
+  "settings.autoApprove.tool.workflow":
+    "Start dynamiske workflows. Tillader at køre et workflow-script, der koordinerer mange underagenter i baggrunden.",
   "settings.saveBar.unsavedChanges": "Ikke-gemte ændringer",
   "settings.saveBar.discard": "Kassér",
   "settings.saveBar.save": "Gem",

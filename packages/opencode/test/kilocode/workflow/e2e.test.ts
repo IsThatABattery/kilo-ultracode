@@ -271,7 +271,7 @@ describe("dynamic workflow end to end", () => {
         const journal = (yield* Effect.promise(() => Bun.file(path.join(detail.dir, WorkflowJournal.FILE)).text()))
           .trim()
           .split("\n")
-          .map((line) => JSON.parse(line) as WorkflowJournal.Entry)
+          .map((line) => JSON.parse(line) as WorkflowJournal.Result)
         expect(journal).toHaveLength(4)
         expect(journal.every((entry) => entry.type === "result" && /^[0-9a-f]{64}$/.test(entry.key))).toBe(true)
         expect(

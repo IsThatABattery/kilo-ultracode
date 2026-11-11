@@ -1,7 +1,9 @@
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { Database } from "@opencode-ai/core/database/database"
+import { Global } from "@opencode-ai/core/global"
 import { SessionProjector } from "@opencode-ai/core/session/projector"
+import type { SessionV1 } from "@opencode-ai/core/v1/session"
 import { MemoryService } from "@kilocode/kilo-memory/effect/service"
 import { afterEach, describe, expect } from "bun:test"
 import { $ } from "bun"
@@ -105,37 +107,44 @@ function tools(body: Body) {
 }
 
 /** A launched parent turn plus a spawn function bound to it, as the workflow runtime would hold them. */
-const setup = Effect.gen(function* () {
-  const prompt = yield* SessionPrompt.Service
-  const sessions = yield* Session.Service
-  const llm = yield* TestLLMServer
-  const parent = yield* sessions.create({ title: "Workflow parent" })
-  yield* llm.text("Launching the workflow")
-  const turn = yield* prompt.prompt({
-    sessionID: parent.id,
-    agent: "code",
-    parts: [{ type: "text", text: "Run a workflow" }],
-  })
-  const ops: TaskPromptOps = {
-    cancel: (id) => prompt.cancel(id),
-    resolvePromptParts: (template) => prompt.resolvePromptParts(template),
-    prompt: (input) => prompt.prompt(input).pipe(Effect.orDie),
-  }
-  const spawn = yield* WorkflowSpawn.make
-  const seen = (yield* llm.inputs).length
-  let index = 0
-  const run = (text: string, opts: AgentOpts = {}, onSession?: (id: string) => void) =>
-    spawn({
-      parent: { sessionID: parent.id, messageID: turn.info.id, agent: "code" },
-      ops,
-      run: { id: "wf_0123abcd-abc", name: "test" },
-      agent: { id: `agent-${index}`, index: index++, label: opts.label ?? `agent ${index}`, prompt: text, opts },
-      onSession,
+const setup = (variant?: string) =>
+  Effect.gen(function* () {
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const llm = yield* TestLLMServer
+    const parent = yield* sessions.create({ title: "Workflow parent" })
+    yield* llm.text("Launching the workflow")
+    const turn = yield* prompt.prompt({
+      sessionID: parent.id,
+      agent: "code",
+      ...(variant ? { variant } : {}),
+      parts: [{ type: "text", text: "Run a workflow" }],
     })
-  /** Provider requests made after the parent turn, i.e. by workflow agents. */
-  const requests = llm.inputs.pipe(Effect.map((items) => items.slice(seen)))
-  return { parent, turn, ops, run, requests, prompt, sessions, llm }
-})
+    const ops: TaskPromptOps = {
+      cancel: (id) => prompt.cancel(id),
+      resolvePromptParts: (template) => prompt.resolvePromptParts(template),
+      prompt: (input) => prompt.prompt(input).pipe(Effect.orDie),
+    }
+    const spawn = yield* WorkflowSpawn.make
+    const seen = (yield* llm.inputs).length
+    let index = 0
+    const run = (
+      text: string,
+      opts: AgentOpts = {},
+      onSession?: (id: string) => void,
+      extra: { caller?: string; ops?: TaskPromptOps } = {},
+    ) =>
+      spawn({
+        parent: { sessionID: parent.id, messageID: turn.info.id, agent: extra.caller ?? "code" },
+        ops: extra.ops ?? ops,
+        run: { id: "wf_0123abcd-abc", name: "test" },
+        agent: { id: `agent-${index}`, index: index++, label: opts.label ?? `agent ${index}`, prompt: text, opts },
+        onSession,
+      })
+    /** Provider requests made after the parent turn, i.e. by workflow agents. */
+    const requests = llm.inputs.pipe(Effect.map((items) => items.slice(seen)))
+    return { parent, turn, ops, run, requests, prompt, sessions, llm }
+  })
 
 function completed(outcome: Outcome) {
   if (outcome.status !== "completed") throw new Error(`expected completed, got ${JSON.stringify(outcome)}`)
@@ -158,7 +167,7 @@ describe("WorkflowSpawn", () => {
       provideTmpdirServer(
         () =>
           Effect.gen(function* () {
-            const ctx = yield* setup
+            const ctx = yield* setup()
             yield* ctx.llm.push(reply().text("42 files").usage({ input: 120, output: 7 }).stop())
             const sessions: string[] = []
             const outcome = completed(
@@ -187,6 +196,12 @@ describe("WorkflowSpawn", () => {
             for (const permission of ["task", "question", "workflow"]) {
               expect(child.permission).toContainEqual({ permission, pattern: "*", action: "deny" })
             }
+            // Run scripts and journals belong to the launching session, not to its agents.
+            expect(child.permission).toContainEqual({
+              permission: "external_directory",
+              pattern: path.join(Global.Path.data, "workflow", "*"),
+              action: "deny",
+            })
 
             const [request] = yield* ctx.requests
             expect(system(request)).toContain(WorkflowPrompts.SUBAGENT_TEXT)
@@ -206,7 +221,7 @@ describe("WorkflowSpawn", () => {
       provideTmpdirServer(
         () =>
           Effect.gen(function* () {
-            const ctx = yield* setup
+            const ctx = yield* setup()
             yield* ctx.llm.tool(WorkflowPrompts.STRUCTURED_OUTPUT_TOOL, { name: 42 })
             yield* ctx.llm.tool(WorkflowPrompts.STRUCTURED_OUTPUT_TOOL, { name: "Ada", age: 36 })
             const outcome = completed(yield* ctx.run("Describe Ada", { schema: person }))
@@ -244,7 +259,7 @@ describe("WorkflowSpawn", () => {
         () =>
           Effect.gen(function* () {
             process.env.KILO_MAX_STRUCTURED_OUTPUT_RETRIES = "2"
-            const ctx = yield* setup
+            const ctx = yield* setup()
             yield* ctx.llm.text("Ada is a person")
             yield* ctx.llm.text("Still prose")
             const outcome = errored(yield* ctx.run("Describe Ada", { schema: person }))
@@ -267,7 +282,7 @@ describe("WorkflowSpawn", () => {
       provideTmpdirServer(
         () =>
           Effect.gen(function* () {
-            const ctx = yield* setup
+            const ctx = yield* setup()
             yield* ctx.llm.error(400, { error: { message: "bad request: model exploded" } })
             const outcome = errored(yield* ctx.run("Do something"))
 
@@ -286,7 +301,7 @@ describe("WorkflowSpawn", () => {
       provideTmpdirServer(
         () =>
           Effect.gen(function* () {
-            const ctx = yield* setup
+            const ctx = yield* setup()
             const high = completed(yield* ctx.run("Think hard", { effort: "xhigh" }))
             expect(high.variant).toBe("high")
             const cheap = completed(yield* ctx.run("Think less", { effort: "low" }))
@@ -313,7 +328,7 @@ describe("WorkflowSpawn", () => {
       provideTmpdirServer(
         () =>
           Effect.gen(function* () {
-            const ctx = yield* setup
+            const ctx = yield* setup()
             const created: string[] = []
             const track = (id: string) => created.push(id)
 
@@ -335,7 +350,90 @@ describe("WorkflowSpawn", () => {
             expect(created).toEqual([])
             expect(yield* ctx.requests).toHaveLength(0)
             expect(WorkflowSpawn.check({ agentType: "" })).toBe("opts.agentType must be a non-empty string")
-            expect(WorkflowSpawn.check({ schema: person, effort: "high", label: "x" })).toBeUndefined()
+            expect(WorkflowSpawn.check({ label: 5 as unknown as string })).toBe("opts.label must be a string")
+            expect(WorkflowSpawn.check({ phase: 2 as unknown as string })).toBe("opts.phase must be a string")
+            expect(WorkflowSpawn.check({ schema: person, effort: "high", label: "x", phase: "P" })).toBeUndefined()
+
+            // Fail closed when the launching agent no longer resolves: its rules are every agent's ceiling.
+            const gone = errored(yield* ctx.run("x", {}, track, { caller: "renamed-away" }))
+            expect(gone.error).toBe('launching agent "renamed-away" is no longer available')
+            expect(created).toEqual([])
+          }),
+        { config },
+      ),
+    60_000,
+  )
+
+  it.live(
+    "a subagent type the launching agent's task permission denies cannot run",
+    () =>
+      provideTmpdirServer(
+        () =>
+          Effect.gen(function* () {
+            const ctx = yield* setup()
+            const created: string[] = []
+            const denied = errored(yield* ctx.run("x", { agentType: "explore" }, (id) => created.push(id)))
+            expect(denied.terminal).toBe(false)
+            expect(denied.error).toBe('Agent type "explore" is denied by the launching agent\'s task permission')
+            expect(created).toEqual([])
+            expect(yield* ctx.requests).toHaveLength(0)
+          }),
+        {
+          config: (url: string) => ({
+            ...config(url),
+            agent: { code: { model: "test/test-model", permission: { task: { "*": "allow", explore: "deny" } } } },
+          }),
+        },
+      ),
+    60_000,
+  )
+
+  it.live(
+    "an explicit opts.model keeps the session effort",
+    () =>
+      provideTmpdirServer(
+        () =>
+          Effect.gen(function* () {
+            const ctx = yield* setup("high")
+            const swapped = completed(yield* ctx.run("Swap the model", { model: "test/test-model" }))
+            expect(swapped.variant).toBe("high")
+            const lowered = completed(yield* ctx.run("Lower it", { model: "test/test-model", effort: "low" }))
+            expect(lowered.variant).toBe("low")
+            const [first, second] = yield* ctx.requests
+            expect(first.reasoning_effort).toBe("high")
+            expect(second.reasoning_effort).toBe("low")
+          }),
+        { config },
+      ),
+    60_000,
+  )
+
+  it.live(
+    "a session stopped before its first reply skips the agent instead of returning its prompt",
+    () =>
+      provideTmpdirServer(
+        () =>
+          Effect.gen(function* () {
+            const ctx = yield* setup()
+            const sent: string[] = []
+            // What prompt() hands back when the child was cancelled from outside before any assistant message.
+            const stopped: TaskPromptOps = {
+              ...ctx.ops,
+              prompt: (input) =>
+                Effect.sync(() => {
+                  sent.push(input.sessionID)
+                  return {
+                    info: { id: input.messageID, role: "user", sessionID: input.sessionID },
+                    parts: [{ type: "text", text: "the prompt itself" }],
+                  } as unknown as SessionV1.WithParts
+                }),
+            }
+            const plain = yield* ctx.run("Never answered", {}, undefined, { ops: stopped })
+            expect(plain.status).toBe("skipped")
+            const structured = yield* ctx.run("Never answered", { schema: person }, undefined, { ops: stopped })
+            expect(structured.status).toBe("skipped")
+            // No re-prompt of a session the user just stopped.
+            expect(sent).toHaveLength(2)
           }),
         { config },
       ),
@@ -348,7 +446,7 @@ describe("WorkflowSpawn", () => {
       provideTmpdirServer(
         () =>
           Effect.gen(function* () {
-            const ctx = yield* setup
+            const ctx = yield* setup()
             yield* ctx.llm.tool(WorkflowPrompts.STRUCTURED_OUTPUT_TOOL, { name: "Ada" })
             const outcome = completed(yield* ctx.run("Find Ada", { agentType: "explore", schema: person }))
             expect(outcome.value).toEqual({ name: "Ada" })
@@ -369,7 +467,7 @@ describe("WorkflowSpawn", () => {
       provideTmpdirServer(
         () =>
           Effect.gen(function* () {
-            const ctx = yield* setup
+            const ctx = yield* setup()
             const status = yield* SessionStatus.Service
             yield* ctx.llm.hang
             const ids: string[] = []
@@ -406,7 +504,7 @@ describe("WorkflowSpawn", () => {
       provideTmpdirServer(
         () =>
           Effect.gen(function* () {
-            const ctx = yield* setup
+            const ctx = yield* setup()
             const status = yield* SessionStatus.Service
             yield* ctx.llm.hang
             const ids: string[] = []
@@ -437,7 +535,7 @@ describe("WorkflowSpawn", () => {
       provideTmpdirServer(
         () =>
           Effect.gen(function* () {
-            const ctx = yield* setup
+            const ctx = yield* setup()
             const outcome = errored(yield* ctx.run("Edit in isolation", { isolation: "worktree" }))
             expect(outcome.terminal).toBe(false)
             expect(outcome.error).toBe("isolation: 'worktree' requires a git repository")
@@ -456,7 +554,7 @@ describe("WorkflowSpawn", () => {
           Effect.gen(function* () {
             // Worktrees check out HEAD, so the provider config has to be committed to reach them.
             yield* Effect.promise(() => $`git add opencode.json && git commit -m config`.cwd(dir).quiet())
-            const ctx = yield* setup
+            const ctx = yield* setup()
             yield* ctx.llm.tool("bash", { command: "touch made-by-agent.txt", description: "Create a file" })
             yield* ctx.llm.text("created")
             const changed = completed(yield* ctx.run("Create a file", { isolation: "worktree" }))

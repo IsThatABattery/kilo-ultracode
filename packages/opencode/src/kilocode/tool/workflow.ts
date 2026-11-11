@@ -7,6 +7,7 @@ import { InstanceState } from "@/effect/instance-state"
 import { assertExternalDirectoryEffect } from "@/tool/external-directory"
 import type { TaskPromptOps } from "@/tool/task"
 import { Tool } from "@/tool/tool"
+import { ConfigProtection } from "@/kilocode/permission/config-paths"
 import { WorkflowBudget } from "@/kilocode/workflow/budget"
 import { KiloWorkflowEnabled } from "@/kilocode/workflow/enabled"
 import { WorkflowMeta } from "@/kilocode/workflow/meta"
@@ -74,12 +75,28 @@ export function launched(input: { runID: string; description: string; dir: strin
   ].join("\n")
 }
 
+/**
+ * The session's prompt ops. `raw`, when the session provides it, is the prompt that is not bound to an active
+ * goal: workflow agents use it, so their routine retries and stops never count as the goal's own work.
+ */
+export type PromptOps = TaskPromptOps & { raw?: TaskPromptOps["prompt"] }
+
 function ops(extra: Tool.Context["extra"]) {
   const value = extra?.promptOps
   if (!value || typeof value !== "object") return undefined
-  const item = value as Partial<TaskPromptOps>
+  const item = value as Partial<PromptOps>
   if (typeof item.prompt !== "function" || typeof item.cancel !== "function") return undefined
-  return value as TaskPromptOps
+  return value as PromptOps
+}
+
+/** Permission pattern of a saved workflow run by name: approvals ("always") stay with this project. */
+export function saved(name: string, project: string) {
+  return `${name.replace(/[*?]/g, "_")}@${project}`
+}
+
+/** Permission pattern of any other launch: never matches a saved workflow's approval or a name rule. */
+export function scripted(name: string) {
+  return `script:${name}`
 }
 
 const fail = (message: string) => Effect.fail(new Error(message))
@@ -89,7 +106,10 @@ export const WorkflowTool = Tool.define<typeof Params, Meta, Config.Service, "wo
   Effect.gen(function* () {
     const config = yield* Config.Service
 
-    /** The script to run: scriptPath first, then an inline script, then a saved workflow by name. */
+    /**
+     * The script to run: scriptPath first, then an inline script, then a saved workflow by name. `saved` marks the
+     * last kind, the only one an "always" approval may cover (never a script the model wrote for this task).
+     */
     const source = (params: Params, ctx: Tool.Context) =>
       Effect.gen(function* () {
         const inst = yield* InstanceState.context
@@ -99,9 +119,9 @@ export const WorkflowTool = Tool.define<typeof Params, Meta, Config.Service, "wo
           const text = yield* Effect.tryPromise(() => Bun.file(file).text()).pipe(
             Effect.catch(() => fail(`Cannot read workflow script: ${file}`)),
           )
-          return { script: text, path: file }
+          return { script: text, path: file, saved: false }
         }
-        if (params.script) return { script: params.script, path: undefined }
+        if (params.script) return { script: params.script, path: undefined, saved: false }
         if (params.name) {
           const directories = yield* config.directories()
           const found = yield* Effect.promise(() =>
@@ -118,7 +138,7 @@ export const WorkflowTool = Tool.define<typeof Params, Meta, Config.Service, "wo
           const text = yield* Effect.tryPromise(() => Bun.file(found.path).text()).pipe(
             Effect.catch(() => fail(`Cannot read saved workflow: ${found.path}`)),
           )
-          return { script: text, path: found.path }
+          return { script: text, path: found.path, saved: true }
         }
         return yield* fail("Provide a workflow `script`, a `scriptPath`, or the `name` of a saved workflow.")
       })
@@ -144,11 +164,17 @@ export const WorkflowTool = Tool.define<typeof Params, Meta, Config.Service, "wo
                 catch: (err) => new Error(err instanceof Error ? err.message : String(err)),
               })
               const meta = parsed.meta
+              const inst = yield* InstanceState.context
+              const project = path.parse(inst.worktree).root === inst.worktree ? inst.directory : inst.worktree
+              // Like Claude Code, "don't ask again" exists only for a saved workflow run by name, and only in this
+              // project: approvals persist globally, so the pattern carries the project.
+              const pattern = found.saved ? saved(meta.name, project) : scripted(meta.name)
               yield* ctx.ask({
                 permission: "workflow",
-                patterns: [meta.name],
-                always: [meta.name],
+                patterns: [pattern],
+                always: found.saved ? [pattern] : [],
                 metadata: {
+                  ...(found.saved ? {} : { [ConfigProtection.DISABLE_ALWAYS_KEY]: true }),
                   name: meta.name,
                   description: meta.description,
                   phases: meta.phases,
@@ -163,6 +189,7 @@ export const WorkflowTool = Tool.define<typeof Params, Meta, Config.Service, "wo
                   messageID: ctx.messageID,
                   agent: ctx.agent,
                   ops: prompt,
+                  ...(typeof prompt.raw === "function" ? { agents: { ...prompt, prompt: prompt.raw } } : {}),
                   script: found.script,
                   args: params.args,
                   total: budget.total,

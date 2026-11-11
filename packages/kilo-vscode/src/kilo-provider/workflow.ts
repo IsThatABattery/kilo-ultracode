@@ -18,6 +18,29 @@ type Message = { type: string; [key: string]: unknown }
 
 const text = (value: unknown) => (typeof value === "string" && value ? value : undefined)
 
+// One ultracode write at a time per session, across panels: the backend reads and writes the session's
+// metadata without a lock, so two quick toggles sent at once could land in the wrong order.
+const queue = new Map<string, Promise<boolean>>()
+
+async function ultracode(ctx: Ctx, client: KiloClient | null, sessionID: string, enabled: boolean) {
+  const prev = queue.get(sessionID) ?? Promise.resolve(true)
+  const next = prev.then(() => {
+    if (!client) return false
+    return client.ultracode
+      .set({ sessionID, enabled, directory: ctx.dir(sessionID) }, { throwOnError: true })
+      .then(() => true)
+      .catch((err: unknown) => {
+        console.error("[Kilo New] Failed to set ultracode:", err)
+        return false
+      })
+  })
+  queue.set(sessionID, next)
+  const ok = await next
+  if (queue.get(sessionID) === next) queue.delete(sessionID)
+  // Settles the webview's choice: once stored, the session's stored value takes over.
+  ctx.post({ type: "ultracodeSaved", sessionID, ok })
+}
+
 async function load(ctx: Ctx, client: KiloClient, runID: string, sessionID: string) {
   const result = await client.workflow
     .get({ runID, directory: ctx.dir(sessionID) }, { throwOnError: true })
@@ -53,15 +76,12 @@ export async function routeWorkflowMessage(input: { type: string }, ctx: Ctx): P
   if (message.type !== "setUltracode" && message.type !== "requestWorkflowRun" && message.type !== "workflowControl")
     return false
   const client = ctx.client
-  if (!client) return true
   if (message.type === "setUltracode") {
     const sessionID = text(message.sessionID)
-    if (!sessionID || typeof message.enabled !== "boolean") return true
-    await client.ultracode
-      .set({ sessionID, enabled: message.enabled, directory: ctx.dir(sessionID) }, { throwOnError: true })
-      .catch((err: unknown) => console.error("[Kilo New] Failed to set ultracode:", err))
+    if (sessionID && typeof message.enabled === "boolean") await ultracode(ctx, client, sessionID, message.enabled)
     return true
   }
+  if (!client) return true
   if (message.type === "requestWorkflowRun") {
     const runID = text(message.runID)
     const sessionID = text(message.sessionID)

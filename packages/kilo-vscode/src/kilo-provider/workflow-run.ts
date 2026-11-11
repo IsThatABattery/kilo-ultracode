@@ -1,10 +1,11 @@
 /**
  * Backend workflow run shapes → the webview's WorkflowRun / WorkflowRunDetail.
- * Kept free of other imports so both the SSE mapper and the request router can use it.
+ * Kept free of imports that pull in the provider, so both the SSE mapper and the request router can use it.
  */
 
 import type { WorkflowAgentInfo, WorkflowRunDetail as Detail, WorkflowRunInfo as Info } from "@kilocode/sdk/v2/client"
 import type { WorkflowAgent, WorkflowRun, WorkflowRunDetail } from "../../webview-ui/src/types/messages/workflow"
+import { childID } from "./task-session"
 
 // Effect's Schema.Number also admits NaN and the infinities, which the SDK types spell as strings.
 function time(value: unknown) {
@@ -28,6 +29,7 @@ export function toRun(info: Info): WorkflowRun {
     cached: info.cached,
     tokens: info.tokens,
     tools: info.tools,
+    size: info.size,
     started: time(info.started) ?? 0,
     ended: time(info.ended),
     dir: info.dir,
@@ -68,4 +70,31 @@ export function workflowAgent(
   tracked: (sessionID: string) => boolean,
 ) {
   return !!info.parentID && !!info.metadata?.["kilo.workflow"] && tracked(info.parentID)
+}
+
+// Events of a workflow agent that still matter while no surface shows its transcript.
+const BACKGROUND = new Set([
+  "permission.asked",
+  "permission.replied",
+  "question.asked",
+  "question.replied",
+  "question.rejected",
+  "suggestion.shown",
+  "suggestion.accepted",
+  "suggestion.dismissed",
+  "session.status",
+  "session.wakeup",
+  "session.deleted",
+])
+
+/**
+ * Whether an event of a workflow agent nobody views still reaches its panel: its prompts, status and
+ * deletion, and the part updates that reveal a nested task child or finish a step. A run can have up
+ * to 1000 agents, so the rest of their transcripts stays on the backend until one is opened.
+ */
+export function workflowBackground(event: { type: string; properties?: unknown }) {
+  if (BACKGROUND.has(event.type)) return true
+  if (event.type !== "message.part.updated") return false
+  const part = (event.properties as { part?: Parameters<typeof childID>[0] } | undefined)?.part
+  return !!part && (part.type === "step-finish" || childID(part) !== undefined)
 }

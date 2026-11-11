@@ -30,6 +30,7 @@ import { editorSelectionKey, useEditorContext, type EditorSelection } from "../.
 import { normalizePromptContent, openEditor } from "../../editor"
 import { useExit } from "../../context/exit"
 import { createDoublePress } from "../../kilocode/double-press" // kilocode_change
+import { UltracodeKeyword } from "../../kilocode/ultracode-keyword" // kilocode_change
 import { promptOffsetWidth } from "../../prompt/display"
 import { createStore, produce, unwrap } from "solid-js/store"
 import { usePromptHistory, type PromptInfo } from "../../prompt/history"
@@ -338,6 +339,16 @@ export function Prompt(props: PromptProps) {
     extmarkToPartIndex: new Map(),
     interrupt: 0,
   })
+  // kilocode_change start - highlight the ultracode keyword; Alt+W or backspace after it dismisses it for this prompt
+  const keyword = UltracodeKeyword.create({
+    input: () => input,
+    target: inputTarget,
+    tick: cursorVersion,
+    syntax,
+    color: () => theme.accent,
+    active: () => UltracodeKeyword.available() && !steer() && store.mode === "normal",
+  })
+  // kilocode_change end
 
   createEffect(
     on(
@@ -1239,11 +1250,13 @@ export function Prompt(props: PromptProps) {
             ...KiloSteer.prompt(target), // kilocode_change - steer a subagent with its own agent/model
             parts: [
               ...editorParts,
-              {
-                type: "text",
+              // kilocode_change start - mark human steering for the parent notice and a dismissed ultracode keyword
+              keyword.stamp({
+                type: "text" as const,
                 text: inputText,
-                ...KiloSteer.mark(target), // kilocode_change - mark human steering for the parent notice
-              },
+                ...KiloSteer.mark(target),
+              }),
+              // kilocode_change end
               ...nonTextParts,
             ],
           },
@@ -1546,6 +1559,7 @@ export function Prompt(props: PromptProps) {
                 setStore("prompt", "input", value)
                 auto()?.onInput(value)
                 syncExtmarksWithPromptParts()
+                keyword.mark() // kilocode_change
                 setCursorVersion((value) => value + 1)
               }}
               /* kilocode_change */ onCursorChange={() => {

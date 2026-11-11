@@ -13,6 +13,8 @@
  *   errors, and replies arrive as strings parsed with the JSON.parse captured here.
  * - Intrinsics the bridge relies on are captured before script code runs, so a script that patches JSON,
  *   Promise.prototype.then, Reflect or Map can only break its own run, not redirect the host channel.
+ * - Bridge payloads are null-prototype objects, so an inherited `toJSON` (or setter) a script adds to
+ *   Object.prototype cannot rewrite them. The host still validates every call it decodes.
  */
 
 export type Bridge = (kind: "call" | "done", id: number, payload: string) => void
@@ -26,7 +28,7 @@ export type Api = {
   spend(tokens: number): void
 }
 
-type Entry = { resolve: (value: unknown) => void; reject: (err: unknown) => void }
+type Entry = PromiseWithResolvers<unknown>
 type Stage = (prev: unknown, item: unknown, index: number) => unknown
 
 export function prelude(bridge: Bridge, init: string): Api {
@@ -44,6 +46,8 @@ export function prelude(bridge: Bridge, init: string): Api {
   const max = Math.max
   const Native = Promise
   const then = Promise.prototype.then
+  const resolvers = Promise.withResolvers
+  const own = Object.getOwnPropertyDescriptor
   const Fail = Error
   const Type = TypeError
   const Clock = Date
@@ -59,6 +63,14 @@ export function prelude(bridge: Bridge, init: string): Api {
     spent: typeof config.spent === "number" ? config.spent : 0,
   }
   const pending = blank(null) as Record<number, Entry | undefined>
+
+  /** A null-prototype copy of `fields`: nothing a script puts on Object.prototype applies to it. */
+  const bare = (fields: Record<string, unknown>) => {
+    const out = blank(null) as Record<string, unknown>
+    const list = names(fields)
+    for (let i = 0; i < list.length; i++) out[list[i]] = fields[list[i]]
+    return out
+  }
 
   const resolved = (value: unknown) => new Native<unknown>((resolve) => resolve(value))
   const rejected = (err: unknown) => new Native<never>((_, reject) => reject(err))
@@ -123,17 +135,17 @@ export function prelude(bridge: Bridge, init: string): Api {
     }
 
   const request = (what: string, body: Record<string, unknown>) => {
-    const text = encode(what, body)
-    return new Native<unknown>((resolve, reject) => {
-      const id = ++state.seq
-      pending[id] = { resolve, reject }
-      try {
-        send("call", id, text)
-      } catch (err) {
-        delete pending[id]
-        reject(err)
-      }
-    })
+    const text = encode(what, bare(body))
+    const id = ++state.seq
+    const entry = apply(resolvers, Native, []) as Entry
+    pending[id] = entry
+    try {
+      send("call", id, text)
+    } catch (err) {
+      delete pending[id]
+      entry.reject(err)
+    }
+    return entry.promise
   }
 
   const show = (parts: unknown[]) => {
@@ -202,7 +214,7 @@ export function prelude(bridge: Bridge, init: string): Api {
     if (opts !== undefined && opts !== null && typeof opts !== "object")
       return rejected(new Type("agent() opts must be an object"))
     const source = (opts ?? {}) as Record<string, unknown>
-    const picked: Record<string, unknown> = {}
+    const picked = blank(null) as Record<string, unknown>
     // null and undefined both mean "inherit" (`opts.phase ?? currentPhase`).
     for (let i = 0; i < keys.length; i++) {
       const value = source[keys[i]]
@@ -251,7 +263,7 @@ export function prelude(bridge: Bridge, init: string): Api {
 
   const workflow = lift((ref: unknown, args?: unknown) => {
     const path = typeof ref === "object" && ref !== null ? (ref as { scriptPath?: unknown }).scriptPath : undefined
-    const target = typeof ref === "string" ? ref : typeof path === "string" ? { scriptPath: path } : undefined
+    const target = typeof ref === "string" ? ref : typeof path === "string" ? bare({ scriptPath: path }) : undefined
     if (target === undefined) return rejected(new Type("workflow() expects a saved workflow name or { scriptPath }"))
     return request(
       "workflow() args",
@@ -260,13 +272,13 @@ export function prelude(bridge: Bridge, init: string): Api {
   })
 
   const log = (...parts: unknown[]) => {
-    send("call", 0, stringify({ method: "log", message: show(parts) }))
+    send("call", 0, stringify(bare({ method: "log", message: show(parts) })))
   }
 
   const phase = (title: unknown) => {
     if (typeof title !== "string") throw new Type("phase() title must be a string")
     state.phase = title
-    send("call", 0, stringify({ method: "phase", title }))
+    send("call", 0, stringify(bare({ method: "phase", title })))
   }
 
   const budget = freeze({
@@ -307,9 +319,38 @@ export function prelude(bridge: Bridge, init: string): Api {
       stub[methods[i]] = unavailable("Temporal.Now." + methods[i] + "()", "pass timestamps via args")
     define(temporal, "Now", { value: freeze(stub), writable: true, configurable: true })
   }
+  // Intl formatters read the wall clock when given no date; an explicit date still formats.
+  const Format = typeof Intl === "object" && Intl !== null ? Intl.DateTimeFormat : undefined
+  if (typeof Format === "function") {
+    const proto = Format.prototype
+    const clock = unavailable("Intl.DateTimeFormat format() without a date", "pass timestamps via args")
+    const getter = own(proto, "format")?.get
+    if (getter)
+      define(proto, "format", {
+        get() {
+          const bound = apply(getter, this, []) as (date?: unknown) => string
+          return (date?: unknown) => (date === undefined ? clock() : bound(date))
+        },
+        enumerable: false,
+        configurable: true,
+      })
+    const parts = proto.formatToParts
+    const stamp = unavailable("Intl.DateTimeFormat formatToParts() without a date", "pass timestamps via args")
+    if (typeof parts === "function")
+      define(proto, "formatToParts", {
+        value: function formatToParts(this: Intl.DateTimeFormat, date?: unknown) {
+          return date === undefined ? stamp() : apply(parts, this, [date])
+        },
+        writable: true,
+        configurable: true,
+      })
+  }
   // GC-driven callbacks are nondeterministic, and a throwing FinalizationRegistry callback is uncatchable.
   delete scope.FinalizationRegistry
   delete scope.WeakRef
+  // Security: a ShadowRealm is a fresh realm that allows code generation from strings and exposes the host's
+  // process and Bun globals (and an unpatched Date.now), i.e. a full sandbox escape.
+  delete scope.ShadowRealm
   // V8-style CallSite objects expose frame functions; a sloppy host frame would hand out the host realm.
   define(Fail, "prepareStackTrace", { value: undefined, writable: false, configurable: false })
 
@@ -330,17 +371,19 @@ export function prelude(bridge: Bridge, init: string): Api {
 
   const fail = (err: unknown) => {
     const info = describe(err)
-    finish(stringify({ ok: false, error: info.error, stack: info.stack }))
+    finish(stringify(bare({ ok: false, error: info.error, stack: info.stack })))
   }
 
   const succeed = (value: unknown) => {
     if (typeof value === "function" || typeof value === "symbol" || typeof value === "bigint")
-      return finish(stringify({ ok: false, error: "workflow result is not JSON-serializable (" + typeof value + ")" }))
+      return finish(
+        stringify(bare({ ok: false, error: "workflow result is not JSON-serializable (" + typeof value + ")" })),
+      )
     try {
       const text = stringify(value)
       return finish(text === undefined ? '{"ok":true}' : '{"ok":true,"value":' + text + "}")
     } catch (err) {
-      return finish(stringify({ ok: false, error: "workflow result is not JSON-serializable: " + reason(err) }))
+      return finish(stringify(bare({ ok: false, error: "workflow result is not JSON-serializable: " + reason(err) })))
     }
   }
 

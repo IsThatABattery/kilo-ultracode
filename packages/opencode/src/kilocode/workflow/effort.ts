@@ -3,7 +3,6 @@
 // translated into one of `keys` or left unset — never synthesized — and an unset variant means the
 // provider default applies.
 
-import { preserveVariant } from "@/kilocode/cli/cmd/run/variant"
 import type { Effort } from "./types"
 
 export namespace WorkflowEffort {
@@ -18,23 +17,22 @@ export namespace WorkflowEffort {
   }
 
   /**
-   * Pick the variant key that best matches `effort`, or undefined to use the provider default.
+   * Pick the variant key for `effort`, or undefined to use the provider default. Like Claude Code, an
+   * unsupported level falls back to the highest supported level at or below it (xhigh runs as high on a
+   * model without xhigh); it is never escalated.
    * - an exact key wins;
    * - `none`/`minimal` are never chosen as stand-ins, since they turn reasoning off;
-   * - `{none, thinking}` toggle models get `thinking` for medium and above;
-   * - otherwise the nearest ladder key, except that a request at or below medium is never
-   *   escalated more than one rung (budget-only `{high, max}` models keep their default instead).
+   * - `{none, thinking}` toggle models get `thinking` for medium and above.
    */
   export function pick(effort: string | undefined, keys: readonly string[]) {
     if (!valid(effort) || keys.length === 0) return undefined
     if (keys.includes(effort)) return effort
     const usable = keys.filter((key) => key !== "none" && key !== "minimal")
     const rank = ladder.indexOf(effort)
-    const medium = ladder.indexOf("medium")
-    if (usable.includes("thinking") && rank >= medium) return "thinking"
-    const hit = preserveVariant(effort, usable)
-    if (!hit) return undefined
-    if (rank <= medium && ladder.indexOf(hit) - rank > 1) return undefined
-    return hit
+    if (usable.includes("thinking") && rank >= ladder.indexOf("medium")) return "thinking"
+    return usable
+      .filter((key) => ladder.includes(key) && ladder.indexOf(key) <= rank)
+      .toSorted((a, b) => ladder.indexOf(b) - ladder.indexOf(a))
+      .at(0)
   }
 }

@@ -154,7 +154,7 @@ import { mergeInjected } from "./shared/injected-prompt"
 import { completesWithoutStatus, goalControl } from "./kilo-provider/command-completion"
 import { flag, ultracodeField, type PromptOptions } from "./kilo-provider/prompt-options"
 import { routeWorkflowMessage } from "./kilo-provider/workflow"
-import { workflowAgent } from "./kilo-provider/workflow-run"
+import { workflowAgent, workflowBackground } from "./kilo-provider/workflow-run"
 import { KiloProviderMemory } from "./kilo-provider/memory"
 
 import {
@@ -517,6 +517,8 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
   private readonly owners = new Map<string, { dir: string; project: string }>()
   // Workflow agents running in their own worktree → that worktree and their launching session's directory.
   private readonly isolated = new Map<string, { dir: string; home: string }>()
+  // Workflow agent sessions this panel tracks for their prompts; their transcripts stream only while shown.
+  private readonly workflowAgents = new Set<string>()
   private sessionGitDirectories = new Map<string, string>() // Stable Git root resolved for each session.
   private sessionGitRecoveries = new Set<string>() // Sessions whose older history was scanned for a Git root.
   private readonly aborts = new SessionAbort()
@@ -2115,7 +2117,8 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
           // the webview just cleaned up.
           if (event.type === "session.deleted") return true
 
-          return this.trackedSessionIds.has(sessionId)
+          if (!this.trackedSessionIds.has(sessionId)) return false
+          return !this.muted(sessionId) || workflowBackground(event)
         },
         (payload, directory) => {
           const event = unwrapSyncEvent(payload)
@@ -2561,6 +2564,12 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       return
     }
     if (!this.syncedChildSessions.delete(sessionID)) return
+    // A workflow agent stays tracked, so a prompt it asks after its tab closes still shows.
+    if (this.workflowAgents.has(sessionID)) {
+      this.streams.drop(sessionID)
+      this.visibleTaskStreams.delete(sessionID)
+      return
+    }
     const status = this.sessionStatusMap.get(sessionID)
     // Offline is not the end of a turn: the session reconnects and continues. Keep the owner so a
     // later status can clear the offline state on the row.
@@ -2724,6 +2733,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     this.sessionDirectories.delete(sessionID)
     this.owners.delete(sessionID)
     this.isolated.delete(sessionID)
+    this.workflowAgents.delete(sessionID)
     this.sessionGitDirectories.delete(sessionID)
     this.sessionGitRecoveries.delete(sessionID)
     this.aborts.delete(sessionID)
@@ -5617,6 +5627,19 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     if (this.postModelUsageChanged(event, sessionID)) return
     if (event.type !== "session.deleted" && sessionID && !this.trackedSessionIds.has(sessionID)) return
 
+    // A workflow agent nobody views keeps its transcript on the backend. Of its part updates, only a
+    // nested task child (to track its prompts) and a finished step (model usage) still matter here.
+    if (sessionID && this.muted(sessionID)) {
+      if (!workflowBackground(event)) return
+      if (event.type === "message.part.updated") {
+        const part = event.properties.part as Parameters<typeof childID>[0]
+        const child = childID(part)
+        if (child && !this.trackedSessionIds.has(child)) void this.handleSyncSession(child, sessionID)
+        if (part.type === "step-finish") this.postMessage({ type: "sessionModelUsageChanged", sessionID })
+        return
+      }
+    }
+
     // Streamed tool input becomes pending part updates, so a tool row shows its
     // arguments while the model still generates them.
     if (event.type === "session.next.tool.input.delta") {
@@ -6232,6 +6255,17 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     return this.trackedSessionIds.has(sessionID)
   }
 
+  /** A workflow agent whose transcript no surface of this panel shows. */
+  private muted(sessionID: string) {
+    return (
+      this.workflowAgents.has(sessionID) &&
+      !this.syncedChildSessions.has(sessionID) &&
+      !this.visibleTaskStreams.has(sessionID) &&
+      !this.openSessionIds.has(sessionID) &&
+      this.currentSession?.id !== sessionID
+    )
+  }
+
   /**
    * Track a workflow agent session of a tracked session so its permission and question prompts show.
    * An agent run with isolation: 'worktree' lives in its own worktree, so record that directory: its
@@ -6240,6 +6274,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
   private adoptWorkflowAgent(session: Session) {
     if (!workflowAgent(session, (id) => this.tracked(id))) return false
     this.trackedSessionIds.add(session.id)
+    this.workflowAgents.add(session.id)
     const parent = session.parentID ?? ""
     const home = this.getWorkspaceDirectory(parent)
     if (session.directory && !sameDirectory(session.directory, home)) {
@@ -6440,6 +6475,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     this.sessionDirectories.clear()
     this.owners.clear()
     this.isolated.clear()
+    this.workflowAgents.clear()
     this.anacondaDesktop.dispose()
     this.aborts.clear()
     this.requests.clear()

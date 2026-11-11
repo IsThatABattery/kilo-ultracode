@@ -1415,6 +1415,15 @@ export const dict = {
   "workflow.agent.status.error": "Помилка",
   "workflow.agent.status.skipped": "Пропущено",
   "workflow.agent.status.cached": "З кешу",
+  "prompt.workflows.command": "Стежити за перебігом робочого процесу (відкрити останній запуск)",
+  "workflow.none": "У цьому сеансі немає запусків робочих процесів",
+  "workflow.large": "Великий робочий процес",
+  "ui.permission.toolLabel.workflow": "Робочий процес",
+  "ui.permission.workflow.phases": "Етапи:",
+  "ui.permission.workflow.caution":
+    "Робочий процес може запустити багато агентів і витратити значно більше токенів, ніж звичайний хід.",
+  "settings.autoApprove.tool.workflow":
+    "Запускати динамічні робочі процеси. Дозволяє запускати скрипт робочого процесу, який у фоні координує багато підагентів.",
 
   "settings.saveBar.unsavedChanges": "Незбережені зміни",
   "settings.saveBar.discard": "Скасувати",

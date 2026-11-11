@@ -1429,6 +1429,15 @@ export const dict = {
   "workflow.agent.status.error": "Mislukt",
   "workflow.agent.status.skipped": "Overgeslagen",
   "workflow.agent.status.cached": "Uit cache",
+  "prompt.workflows.command": "Voortgang van de workflow bekijken (laatste uitvoering openen)",
+  "workflow.none": "Geen workflow-uitvoeringen in deze sessie",
+  "workflow.large": "Grote workflow",
+  "ui.permission.toolLabel.workflow": "Workflow",
+  "ui.permission.workflow.phases": "Fasen:",
+  "ui.permission.workflow.caution":
+    "Een workflow kan veel agents uitvoeren en aanzienlijk meer tokens gebruiken dan een normale beurt.",
+  "settings.autoApprove.tool.workflow":
+    "Dynamische workflows starten. Staat het uitvoeren toe van een workflowscript dat op de achtergrond veel subagents coördineert.",
 
   "settings.saveBar.unsavedChanges": "Niet-opgeslagen wijzigingen",
   "settings.saveBar.discard": "Verwerpen",
