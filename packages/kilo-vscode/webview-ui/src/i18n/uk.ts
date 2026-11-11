@@ -964,6 +964,9 @@ export const dict = {
   "settings.experimental.ultracodeKeyword.title": "Ключове слово Ultracode",
   "settings.experimental.ultracodeKeyword.description":
     "Слово ultracode у повідомленні вмикає мультиагентний робочий процес для цього повідомлення",
+  "settings.experimental.claudeWorkflows.title": "Робочі процеси Claude Code",
+  "settings.experimental.claudeWorkflows.description":
+    "Також запускати збережені робочі процеси з папок .claude/workflows/ Claude Code",
   "settings.experimental.continueOnDeny.title": "Продовжувати при відхиленні",
   "settings.experimental.continueOnDeny.description": "Продовжувати цикл агента, коли дозвіл відхилено",
   "settings.sandboxing.title": "Пісочниця",

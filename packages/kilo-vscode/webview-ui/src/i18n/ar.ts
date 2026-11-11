@@ -948,6 +948,9 @@ export const dict = {
   "settings.experimental.ultracodeKeyword.title": "مشغّل كلمة Ultracode",
   "settings.experimental.ultracodeKeyword.description":
     "السماح لكلمة ultracode في الرسالة بتفعيل سير عمل متعدد الوكلاء لتلك الرسالة",
+  "settings.experimental.claudeWorkflows.title": "سير عمل Claude Code",
+  "settings.experimental.claudeWorkflows.description":
+    "تشغيل سير العمل المحفوظ في مجلدات .claude/workflows/ الخاصة بـ Claude Code أيضًا",
   "settings.experimental.continueOnDeny.title": "المتابعة عند الرفض",
   "settings.experimental.continueOnDeny.description": "متابعة حلقة الوكيل عند رفض الإذن",
   "settings.sandboxing.title": "العزل",

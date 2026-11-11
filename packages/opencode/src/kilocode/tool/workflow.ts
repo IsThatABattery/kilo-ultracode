@@ -29,8 +29,7 @@ export const Params = Schema.Struct({
       "Path to a workflow script file on disk. Every workflow invocation persists its script under the session directory and returns the path in the tool result. To iterate, edit that file with the edit/write tools and re-invoke the workflow tool with the same `scriptPath` instead of re-sending the full script. Takes precedence over `script` and `name`.",
   }),
   name: Schema.optional(Schema.String).annotate({
-    description:
-      "Name of a saved workflow (from .kilo/workflows/ or .claude/workflows/). Resolves to a self-contained script.",
+    description: "Name of a saved workflow (from .kilo/workflows/). Resolves to a self-contained script.",
   }),
   args: Schema.optional(Schema.Unknown).annotate({
     description:
@@ -124,21 +123,18 @@ export const WorkflowTool = Tool.define<typeof Params, Meta, Config.Service, "wo
         }
         if (params.script) return { script: params.script, path: undefined, saved: false }
         if (params.name) {
-          const directories = yield* config.directories()
-          const found = yield* Effect.promise(() =>
-            WorkflowSaved.find({
-              directories,
-              directory: inst.directory,
-              worktree: inst.worktree,
-              name: params.name ?? "",
-            }),
-          )
+          const input = {
+            directories: yield* config.directories(),
+            directory: inst.directory,
+            worktree: inst.worktree,
+            claude: KiloWorkflowEnabled.claude(yield* config.get()),
+          }
+          const found = yield* Effect.promise(() => WorkflowSaved.find({ ...input, name: params.name ?? "" }))
           if (!found) {
-            const names = (yield* Effect.promise(() =>
-              WorkflowSaved.list({ directories, directory: inst.directory, worktree: inst.worktree }),
-            )).map((item) => item.name)
+            const names = (yield* Effect.promise(() => WorkflowSaved.list(input))).map((item) => item.name)
+            const dirs = input.claude ? ".kilo/workflows/ or .claude/workflows/" : ".kilo/workflows/"
             return yield* fail(
-              `Unknown saved workflow "${params.name}".${names.length ? ` Saved workflows: ${names.join(", ")}` : " No saved workflows were found in .kilo/workflows/ or .claude/workflows/."}`,
+              `Unknown saved workflow "${params.name}".${names.length ? ` Saved workflows: ${names.join(", ")}` : ` No saved workflows were found in ${dirs}.`}`,
             )
           }
           const text = yield* Effect.tryPromise(() => Bun.file(found.path).text()).pipe(

@@ -39556,6 +39556,9 @@
                 "type": "string",
                 "enum": ["small", "medium", "large", "unrestricted"]
               },
+              "claude_workflows": {
+                "type": "boolean"
+              },
               "primary_tools": {
                 "type": "array",
                 "items": {

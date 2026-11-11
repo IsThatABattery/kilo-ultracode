@@ -155,7 +155,9 @@ Save a run's script to reuse it later. In the CLI, open the run in `/workflows`,
 | Project | `.kilo/workflows/<name>.js`, in the closest existing `.kilo/workflows/` folder between the current directory and the project root, otherwise at the project root |
 | Global | `~/.config/kilo/workflows/<name>.js` |
 
-You can also write or edit these files yourself. Kilo also reads `.js` workflows from `.kilocode/workflows/`, `~/.kilo/workflows/`, and `~/.kilocode/workflows/`, and from Claude Code's `.claude/workflows/` and `~/.claude/workflows/`, so workflows saved in Claude Code run here too. Kilo's own folders win over `.claude` at the same level. Set `KILO_DISABLE_CLAUDE_CODE=1` to skip the `.claude` folders.
+You can also write or edit these files yourself. Kilo also reads `.js` workflows from `.kilocode/workflows/`, `~/.kilo/workflows/`, and `~/.kilocode/workflows/`.
+
+To run workflows saved in Claude Code too, set `experimental.claude_workflows` to `true`, or turn on **Claude Code Workflows** in the VS Code extension's Experimental settings. Kilo then also reads Claude Code's `.claude/workflows/` folders from the current directory up to the project root, and `~/.claude/workflows/`. Kilo's own folders win over `.claude` at the same level. `KILO_DISABLE_CLAUDE_CODE=1` skips the `.claude` folders even when the setting is on.
 
 {% callout type="note" %}
 `.md` files in a `workflows/` folder are legacy [slash-command workflows](/docs/customize/workflows), which Kilo converts to commands. Only `.js` files are dynamic workflows.
@@ -320,6 +322,7 @@ Set these keys in `kilo.jsonc`:
 | `experimental.ultracode` | `false` | Start every session with ultracode on |
 | `experimental.ultracode_keyword` | `true` | Set to `false` so the word `ultracode` in a message no longer opts in to a workflow |
 | `experimental.workflow_size` | `"medium"` | Size guideline: `small` (fewer than 5 agents), `medium` (fewer than 10), `large` (fewer than 50), or `unrestricted` (no guideline) |
+| `experimental.claude_workflows` | `false` | Set to `true` to also run saved workflows from Claude Code's `.claude/workflows/` folders |
 | `permission.workflow` | `"ask"` | Whether starting a workflow asks for approval, runs without asking, or is blocked. See [Permission patterns](#permission-patterns) |
 
 ```jsonc

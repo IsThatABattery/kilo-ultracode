@@ -85,10 +85,11 @@ export namespace WorkflowSaved {
 
   /**
    * Claude Code's workflow directories, so workflows saved there run here too: every existing `.claude` from the
-   * working directory up to the project root, then `~/.claude`. None when KILO_DISABLE_CLAUDE_CODE is set.
+   * working directory up to the project root, then `~/.claude`. Only with `experimental.claude_workflows` on, and
+   * never when KILO_DISABLE_CLAUDE_CODE is set.
    */
-  async function external(input: { directory: string; worktree?: string }) {
-    if (Flag.KILO_DISABLE_CLAUDE_CODE) return []
+  async function external(input: { directory: string; worktree?: string; claude?: boolean }) {
+    if (!input.claude || Flag.KILO_DISABLE_CLAUDE_CODE) return []
     const dirs = [
       ...bases({ directory: input.directory, worktree: input.worktree ?? "/" }).map((base) =>
         path.join(base, ".claude"),
@@ -133,10 +134,15 @@ export namespace WorkflowSaved {
 
   /**
    * Discover saved workflows (`<dir>/workflows/*.js`) across Kilo config directories (the caller passes
-   * Config.directories()) and Claude Code's `.claude` directories. One entry per name: the nearest project directory
-   * wins, and project beats global. Files whose `meta` does not parse are skipped.
+   * Config.directories()) and, when `claude` is set, Claude Code's `.claude` directories. One entry per name: the
+   * nearest project directory wins, and project beats global. Files whose `meta` does not parse are skipped.
    */
-  export async function list(input: { directories: string[]; directory: string; worktree?: string }): Promise<Entry[]> {
+  export async function list(input: {
+    directories: string[]
+    directory: string
+    worktree?: string
+    claude?: boolean
+  }): Promise<Entry[]> {
     const directories = [...input.directories, ...(await external(input))]
     const found = await Promise.all(
       order({ directories, directory: input.directory }).map((item) => scan(item.dir, item.scope)),
@@ -150,7 +156,13 @@ export namespace WorkflowSaved {
   }
 
   /** Resolve a saved workflow by `meta.name`, falling back to the file name without `.js`. */
-  export async function find(input: { directories: string[]; directory: string; worktree?: string; name: string }) {
+  export async function find(input: {
+    directories: string[]
+    directory: string
+    worktree?: string
+    claude?: boolean
+    name: string
+  }) {
     const items = await list(input)
     return (
       items.find((item) => item.name === input.name) ??
@@ -246,7 +258,7 @@ export namespace WorkflowSaved {
     worktree?: string
   }) {
     if (!KiloWorkflowEnabled.enabled(input.cfg, input.flags)) return []
-    const items = yield* Effect.promise(() => list(input))
+    const items = yield* Effect.promise(() => list({ ...input, claude: KiloWorkflowEnabled.claude(input.cfg) }))
     // The name lands in a command template, where `!`…``, `$N` and `@path` expand; such names stay tool-only.
     return items
       .filter((item) => SAFE.test(item.name))

@@ -934,6 +934,9 @@ export const dict = {
   "settings.experimental.ultracodeKeyword.title": "Ultracode-nøkkelord",
   "settings.experimental.ultracodeKeyword.description":
     "La ordet ultracode i en melding slå på en arbeidsflyt med flere agenter for den meldingen",
+  "settings.experimental.claudeWorkflows.title": "Claude Code-arbeidsflyter",
+  "settings.experimental.claudeWorkflows.description":
+    "Kjør også lagrede arbeidsflyter fra Claude Codes .claude/workflows/-mapper",
   "settings.experimental.continueOnDeny.title": "Fortsett ved avvisning",
   "settings.experimental.continueOnDeny.description": "Fortsett agentløkken når en tillatelse avvises",
   "settings.sandboxing.title": "Kjøring i sandkasse",

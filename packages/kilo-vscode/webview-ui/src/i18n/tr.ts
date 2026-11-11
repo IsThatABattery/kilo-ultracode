@@ -963,6 +963,9 @@ export const dict = {
   "settings.experimental.ultracodeKeyword.title": "Ultracode Anahtar Kelimesi",
   "settings.experimental.ultracodeKeyword.description":
     "Bir mesajdaki ultracode kelimesi o mesaj için çok ajanlı bir iş akışını etkinleştirir",
+  "settings.experimental.claudeWorkflows.title": "Claude Code iş akışları",
+  "settings.experimental.claudeWorkflows.description":
+    "Claude Code'un .claude/workflows/ klasörlerine kaydedilmiş iş akışlarını da çalıştırır",
   "settings.experimental.continueOnDeny.title": "Reddetme Durumunda Devam Et",
   "settings.experimental.continueOnDeny.description": "Bir izin reddedildiğinde ajan döngüsüne devam et",
   "settings.sandboxing.title": "Sandbox",

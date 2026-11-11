@@ -2796,6 +2796,7 @@ export type Config = {
     ultracode?: boolean
     ultracode_keyword?: boolean
     workflow_size?: "small" | "medium" | "large" | "unrestricted"
+    claude_workflows?: boolean
     primary_tools?: Array<string>
     continue_loop_on_deny?: boolean
     sandbox?: boolean

@@ -927,6 +927,9 @@ export const dict = {
   "settings.experimental.ultracode.description": "会话启动时开启 ultracode，让智能体为每个实质性任务规划多智能体工作流",
   "settings.experimental.ultracodeKeyword.title": "Ultracode 关键词触发",
   "settings.experimental.ultracodeKeyword.description": "消息中出现 ultracode 一词时，为该消息启用多智能体工作流",
+  "settings.experimental.claudeWorkflows.title": "Claude Code 工作流",
+  "settings.experimental.claudeWorkflows.description":
+    "同时运行 Claude Code 保存在 .claude/workflows/ 文件夹中的工作流",
   "settings.experimental.continueOnDeny.title": "拒绝后继续",
   "settings.experimental.continueOnDeny.description": "权限被拒绝时继续智能体循环",
   "settings.sandboxing.title": "沙盒",

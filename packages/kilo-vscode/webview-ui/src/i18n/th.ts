@@ -957,6 +957,9 @@ export const dict = {
   "settings.experimental.ultracodeKeyword.title": "คำเรียก Ultracode",
   "settings.experimental.ultracodeKeyword.description":
     "ให้คำว่า ultracode ในข้อความเปิดใช้เวิร์กโฟลว์แบบหลายเอเจนต์สำหรับข้อความนั้น",
+  "settings.experimental.claudeWorkflows.title": "เวิร์กโฟลว์ของ Claude Code",
+  "settings.experimental.claudeWorkflows.description":
+    "เรียกใช้เวิร์กโฟลว์ที่บันทึกไว้ในโฟลเดอร์ .claude/workflows/ ของ Claude Code ด้วย",
   "settings.experimental.continueOnDeny.title": "ดำเนินต่อเมื่อถูกปฏิเสธ",
   "settings.experimental.continueOnDeny.description": "ดำเนินลูปเอเจนต์ต่อเมื่อสิทธิ์ถูกปฏิเสธ",
   "settings.sandboxing.title": "การทำงานในแซนด์บ็อกซ์",

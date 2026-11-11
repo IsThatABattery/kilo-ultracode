@@ -992,6 +992,9 @@ export const dict = {
   "settings.experimental.ultracodeKeyword.title": "Ultracode-Schlüsselwort",
   "settings.experimental.ultracodeKeyword.description":
     "Das Wort ultracode in einer Nachricht aktiviert für diese Nachricht einen Multi-Agenten-Workflow",
+  "settings.experimental.claudeWorkflows.title": "Claude Code-Workflows",
+  "settings.experimental.claudeWorkflows.description":
+    "Gespeicherte Workflows auch aus den .claude/workflows/-Ordnern von Claude Code ausführen",
   "settings.experimental.continueOnDeny.title": "Bei Ablehnung fortfahren",
   "settings.experimental.continueOnDeny.description":
     "Agent-Schleife fortsetzen, wenn eine Berechtigung abgelehnt wird",

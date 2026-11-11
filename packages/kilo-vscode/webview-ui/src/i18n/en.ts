@@ -949,6 +949,9 @@ export const dict = {
   "settings.experimental.ultracodeKeyword.title": "Ultracode Keyword Trigger",
   "settings.experimental.ultracodeKeyword.description":
     "Let the word ultracode in a message opt that message in to a multi-agent workflow",
+  "settings.experimental.claudeWorkflows.title": "Claude Code Workflows",
+  "settings.experimental.claudeWorkflows.description":
+    "Also run saved workflows from Claude Code's .claude/workflows/ folders",
   "settings.experimental.continueOnDeny.title": "Continue on Deny",
   "settings.experimental.continueOnDeny.description": "Continue the agent loop when a permission is denied",
   "settings.experimental.codeMode.title": "Programmatic Tool Calling",

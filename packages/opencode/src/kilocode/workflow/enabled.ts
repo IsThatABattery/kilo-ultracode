@@ -1,6 +1,8 @@
 import type { Size } from "./types"
 
-type Settings = { experimental?: { workflows?: boolean; ultracode?: boolean; workflow_size?: Size } }
+type Settings = {
+  experimental?: { workflows?: boolean; ultracode?: boolean; workflow_size?: Size; claude_workflows?: boolean }
+}
 type Flags = { disableWorkflows: boolean }
 
 export namespace KiloWorkflowEnabled {
@@ -13,6 +15,11 @@ export namespace KiloWorkflowEnabled {
   /** Default ultracode state for sessions that never toggled it. */
   export function ultracode(cfg: Settings) {
     return cfg.experimental?.ultracode === true
+  }
+
+  /** Whether saved workflows are also read from Claude Code's `.claude/workflows/` folders. Off by default. */
+  export function claude(cfg: Settings) {
+    return cfg.experimental?.claude_workflows === true
   }
 
   /** Advisory size guideline; `explicit` is false when the default applies. */

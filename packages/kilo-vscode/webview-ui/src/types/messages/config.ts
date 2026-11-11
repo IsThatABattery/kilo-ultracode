@@ -80,6 +80,8 @@ export interface ExperimentalConfig {
   /** The word ultracode in a typed message opts that message in. On unless set to false. */
   ultracode_keyword?: boolean
   workflow_size?: "small" | "medium" | "large" | "unrestricted"
+  /** Also run saved workflows from Claude Code's .claude/workflows/ folders. Off unless set to true. */
+  claude_workflows?: boolean
 }
 
 export interface SandboxConfig {

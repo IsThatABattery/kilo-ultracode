@@ -969,6 +969,9 @@ export const dict = {
   "settings.experimental.ultracodeKeyword.title": "Ключевое слово Ultracode",
   "settings.experimental.ultracodeKeyword.description":
     "Слово ultracode в сообщении включает мультиагентный рабочий процесс для этого сообщения",
+  "settings.experimental.claudeWorkflows.title": "Рабочие процессы Claude Code",
+  "settings.experimental.claudeWorkflows.description":
+    "Также запускать сохранённые рабочие процессы из папок .claude/workflows/ Claude Code",
   "settings.experimental.continueOnDeny.title": "Продолжить при отказе",
   "settings.experimental.continueOnDeny.description": "Продолжить цикл агента при отказе в разрешении",
   "settings.sandboxing.title": "Изоляция в песочнице",

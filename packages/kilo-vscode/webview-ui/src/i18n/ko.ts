@@ -962,6 +962,9 @@ export const dict = {
   "settings.experimental.ultracodeKeyword.title": "Ultracode 키워드 트리거",
   "settings.experimental.ultracodeKeyword.description":
     "메시지에 ultracode라는 단어가 있으면 해당 메시지에 멀티 에이전트 워크플로를 사용합니다",
+  "settings.experimental.claudeWorkflows.title": "Claude Code 워크플로",
+  "settings.experimental.claudeWorkflows.description":
+    "Claude Code의 .claude/workflows/ 폴더에 저장된 워크플로도 실행합니다",
   "settings.experimental.continueOnDeny.title": "거부 시 계속",
   "settings.experimental.continueOnDeny.description": "권한이 거부되면 에이전트 루프 계속",
   "settings.sandboxing.title": "샌드박스",

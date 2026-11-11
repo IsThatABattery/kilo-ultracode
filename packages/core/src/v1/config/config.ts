@@ -368,6 +368,9 @@ export const Info = Schema.Struct({
         description:
           "Advisory size guideline for dynamic workflows: small (<5 agents), medium (<10), large (<50) or unrestricted (default: medium)",
       }),
+      claude_workflows: Schema.optional(Schema.Boolean).annotate({
+        description: "Also run saved workflows from Claude Code's .claude/workflows/ folders (default: false)",
+      }),
       // kilocode_change end
       primary_tools: Schema.optional(Schema.mutable(Schema.Array(Schema.String))).annotate({
         description: "Tools that should only be available to primary agents.",

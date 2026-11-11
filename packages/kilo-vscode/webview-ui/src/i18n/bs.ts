@@ -972,6 +972,9 @@ export const dict = {
   "settings.experimental.ultracodeKeyword.title": "Okidač riječi Ultracode",
   "settings.experimental.ultracodeKeyword.description":
     "Dozvoli da riječ ultracode u poruci uključi tok rada s više agenata za tu poruku",
+  "settings.experimental.claudeWorkflows.title": "Claude Code tokovi rada",
+  "settings.experimental.claudeWorkflows.description":
+    "Pokreni i sačuvane tokove rada iz Claude Code foldera .claude/workflows/",
   "settings.experimental.continueOnDeny.title": "Nastavi pri odbijanju",
   "settings.experimental.continueOnDeny.description": "Nastavi petlju agenta kada je dozvola odbijena",
   "settings.sandboxing.title": "Rad u izoliranom okruženju",

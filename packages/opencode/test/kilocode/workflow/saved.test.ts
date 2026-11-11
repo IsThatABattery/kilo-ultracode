@@ -82,7 +82,7 @@ describe("WorkflowSaved.list", () => {
     ])
   })
 
-  test("reads Claude Code's .claude/workflows up to the worktree, after Kilo's folders, and ~/.claude last", async () => {
+  test("with claude set, reads .claude/workflows up to the worktree, after Kilo's folders, and ~/.claude last", async () => {
     await using tmp = await tmpdir()
     const outer = path.join(tmp.path, ".claude")
     const root = path.join(tmp.path, "repo")
@@ -104,7 +104,18 @@ describe("WorkflowSaved.list", () => {
     await put(user, script("saved-test-user", "from ~/.claude"))
     await put(own, script("saved-test-user", "from the global config dir"))
 
-    const items = await WorkflowSaved.list({ directories: [global, kilo], directory: sub, worktree: root })
+    // Off by default: only Kilo's own folders are read.
+    const off = await WorkflowSaved.list({ directories: [global, kilo], directory: sub, worktree: root })
+    expect(off.map((item) => item.name)).not.toContain("deep")
+    expect(off.map((item) => item.name)).not.toContain("saved-test-claude")
+    expect(off.find((item) => item.name === "same")).toMatchObject({ description: "from root .kilo" })
+
+    const items = await WorkflowSaved.list({
+      directories: [global, kilo],
+      directory: sub,
+      worktree: root,
+      claude: true,
+    })
     const by = Object.fromEntries(items.map((item) => [item.name, item]))
     expect(by.deep).toMatchObject({ description: "from package .claude", scope: "project" })
     expect(by.same).toMatchObject({ description: "from root .kilo", scope: "project" })
@@ -117,7 +128,7 @@ describe("WorkflowSaved.list", () => {
     ).toEqual([near, kilo, far, global, home])
 
     // Without a worktree only the working directory's own .claude is read.
-    const solo = await WorkflowSaved.list({ directories: [], directory: sub })
+    const solo = await WorkflowSaved.list({ directories: [], directory: sub, claude: true })
     expect(solo.map((item) => item.name)).toContain("deep")
     expect(solo.map((item) => item.name)).not.toContain("same")
   })
@@ -228,6 +239,17 @@ describe("WorkflowSaved commands", () => {
     expect(WorkflowSaved.template("bug-hunt")).toBe(
       'Run the saved workflow "bug-hunt" by calling the workflow tool with name "bug-hunt". If the user supplied input below, pass it as the tool\'s `args` (as structured JSON when the workflow expects a list or object):\n\n$ARGUMENTS',
     )
+  })
+
+  test("offers .claude/workflows as commands only with experimental.claude_workflows on", async () => {
+    await using tmp = await tmpdir()
+    await put(path.join(tmp.path, ".claude", "workflows", "cc.js"), script("cc-flow", "from Claude Code"))
+    const input = { flags: { disableWorkflows: false }, directories: [], directory: tmp.path, worktree: tmp.path }
+    const names = (cfg: Parameters<typeof WorkflowSaved.commands>[0]["cfg"]) =>
+      Effect.runPromise(WorkflowSaved.commands({ ...input, cfg })).then((list) => list.map((item) => item.name))
+    expect(await names({})).not.toContain("cc-flow")
+    expect(await names({ experimental: { claude_workflows: false } })).not.toContain("cc-flow")
+    expect(await names({ experimental: { claude_workflows: true } })).toContain("cc-flow")
   })
 
   const it = testEffect(

@@ -931,6 +931,9 @@ export const dict = {
   "settings.experimental.ultracodeKeyword.title": "Słowo kluczowe Ultracode",
   "settings.experimental.ultracodeKeyword.description":
     "Słowo ultracode w wiadomości włącza wieloagentowy przepływ pracy dla tej wiadomości",
+  "settings.experimental.claudeWorkflows.title": "Przepływy pracy Claude Code",
+  "settings.experimental.claudeWorkflows.description":
+    "Uruchamiaj też zapisane przepływy pracy z folderów .claude/workflows/ Claude Code",
   "settings.experimental.continueOnDeny.title": "Kontynuuj przy odmowie",
   "settings.experimental.continueOnDeny.description": "Kontynuuj pętlę agenta po odmowie uprawnienia",
   "settings.sandboxing.title": "Izolacja w piaskownicy",

@@ -994,6 +994,9 @@ export const dict = {
   "settings.experimental.ultracodeKeyword.title": "Mot-clé Ultracode",
   "settings.experimental.ultracodeKeyword.description":
     "Le mot ultracode dans un message active un workflow multi-agents pour ce message",
+  "settings.experimental.claudeWorkflows.title": "Workflows Claude Code",
+  "settings.experimental.claudeWorkflows.description":
+    "Exécute aussi les workflows enregistrés dans les dossiers .claude/workflows/ de Claude Code",
   "settings.experimental.continueOnDeny.title": "Continuer en cas de refus",
   "settings.experimental.continueOnDeny.description":
     "Continuer la boucle de l'agent lorsqu'une autorisation est refusée",

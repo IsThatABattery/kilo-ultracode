@@ -983,6 +983,9 @@ export const dict = {
   "settings.experimental.ultracodeKeyword.title": "Activador por palabra Ultracode",
   "settings.experimental.ultracodeKeyword.description":
     "Permite que la palabra ultracode en un mensaje active un flujo de trabajo multiagente para ese mensaje",
+  "settings.experimental.claudeWorkflows.title": "Flujos de trabajo de Claude Code",
+  "settings.experimental.claudeWorkflows.description":
+    "Ejecuta también los flujos de trabajo guardados en las carpetas .claude/workflows/ de Claude Code",
   "settings.experimental.continueOnDeny.title": "Continuar al denegar",
   "settings.experimental.continueOnDeny.description": "Continuar el bucle del agente cuando se deniega un permiso",
   "settings.sandboxing.title": "Sandbox",

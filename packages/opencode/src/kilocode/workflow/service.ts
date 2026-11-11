@@ -164,8 +164,9 @@ export namespace KiloWorkflow {
         const ctx = yield* InstanceState.context
         if (typeof ref === "string") {
           const directories = yield* config.directories()
+          const claude = KiloWorkflowEnabled.claude(yield* config.get())
           const found = yield* Effect.promise(() =>
-            WorkflowSaved.find({ directories, directory: ctx.directory, worktree: ctx.worktree, name: ref }),
+            WorkflowSaved.find({ directories, directory: ctx.directory, worktree: ctx.worktree, claude, name: ref }),
           )
           if (!found) return yield* Effect.fail(new Error(`Unknown workflow "${ref}": no saved workflow has that name`))
           return { script: yield* read(found.path), path: found.path }

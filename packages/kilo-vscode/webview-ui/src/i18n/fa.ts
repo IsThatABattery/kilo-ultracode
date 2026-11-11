@@ -956,6 +956,9 @@ export const dict = {
   "settings.experimental.ultracodeKeyword.title": "کلیدواژه Ultracode",
   "settings.experimental.ultracodeKeyword.description":
     "اجازه بده واژه ultracode در یک پیام، گردش کار چندعاملی را برای همان پیام فعال کند",
+  "settings.experimental.claudeWorkflows.title": "گردش‌های کار Claude Code",
+  "settings.experimental.claudeWorkflows.description":
+    "گردش‌های کار ذخیره‌شده در پوشه‌های .claude/workflows/ مربوط به Claude Code هم اجرا شوند",
   "settings.experimental.continueOnDeny.title": "ادامه در صورت رد",
   "settings.experimental.continueOnDeny.description": "حلقه عامل را هنگام رد شدن یک مجوز ادامه دهید",
   "settings.experimental.codeMode.title": "فراخوانی برنامه‌نویسی ابزارها",

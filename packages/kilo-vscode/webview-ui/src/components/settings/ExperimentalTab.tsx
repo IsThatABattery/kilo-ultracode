@@ -262,6 +262,19 @@ const ExperimentalTab: Component = () => {
               {language.t("settings.experimental.ultracodeKeyword.title")}
             </Switch>
           </SettingsRow>
+
+          <SettingsRow
+            title={language.t("settings.experimental.claudeWorkflows.title")}
+            description={language.t("settings.experimental.claudeWorkflows.description")}
+          >
+            <Switch
+              checked={experimental().claude_workflows ?? false}
+              onChange={(checked) => updateExperimental("claude_workflows", checked)}
+              hideLabel
+            >
+              {language.t("settings.experimental.claudeWorkflows.title")}
+            </Switch>
+          </SettingsRow>
         </Show>
 
         <SettingsRow

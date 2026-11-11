@@ -967,6 +967,9 @@ export const dict = {
   "settings.experimental.ultracodeKeyword.title": "Ultracode キーワード",
   "settings.experimental.ultracodeKeyword.description":
     "メッセージに ultracode という単語を含めると、そのメッセージでマルチエージェントのワークフローを使います",
+  "settings.experimental.claudeWorkflows.title": "Claude Code のワークフロー",
+  "settings.experimental.claudeWorkflows.description":
+    "Claude Code の .claude/workflows/ フォルダーに保存されたワークフローも実行します",
   "settings.experimental.continueOnDeny.title": "拒否時に続行",
   "settings.experimental.continueOnDeny.description": "権限が拒否された場合にエージェントループを続行",
   "settings.sandboxing.title": "サンドボックス化",
