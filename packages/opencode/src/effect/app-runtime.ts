@@ -58,6 +58,7 @@ import { Notebook } from "@/kilocode/notebook/service"
 import { SessionDrain } from "@/kilocode/session/drain"
 import { AgentManager } from "@/kilocode/agent-manager/service"
 import { Wakeup } from "@/kilocode/wakeup"
+import { KiloWorkflow } from "@/kilocode/workflow/service"
 // kilocode_change end
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
@@ -79,6 +80,7 @@ const kilo = LayerNode.group([
   Notebook.node,
   SessionDrain.node,
   Wakeup.node,
+  KiloWorkflow.node,
   memory,
 ])
 // kilocode_change end

@@ -54,6 +54,7 @@ export const CodeWithAiNav: NavSection[] = [
           { href: "/code-with-ai/gastown/wasteland/settings", children: "Wasteland: Settings" },
         ],
       },
+      { href: "/code-with-ai/features/workflows", children: "Dynamic Workflows & Ultracode", platform: "new" },
     ],
   },
   {

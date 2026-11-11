@@ -27,6 +27,7 @@ const labels: Record<string, string> = {
   "ui.permission.toolLabel.task": "Task",
   "ui.permission.toolLabel.skill": "Skill",
   "ui.permission.toolLabel.lsp": "LSP",
+  "ui.permission.toolLabel.workflow": "Workflow",
   "ui.permission.doomLoop.prompt": "Potential loop detected for the {{tool}} tool. Continue running?",
   "ui.permission.doomLoop.rule": "Continue {{tool}} calls",
 }
@@ -129,6 +130,7 @@ describe("describePatterns", () => {
       task: "ui.permission.toolLabel.task",
       skill: "ui.permission.toolLabel.skill",
       lsp: "ui.permission.toolLabel.lsp",
+      workflow: "ui.permission.toolLabel.workflow",
     }
     expect(TOOL_LABEL_KEYS).toEqual(expected)
   })
@@ -251,6 +253,7 @@ describe("resolveLabel", () => {
       task: "Task",
       skill: "Skill",
       lsp: "LSP",
+      workflow: "Workflow",
     }
     for (const [tool, label] of Object.entries(expected)) {
       expect(resolveLabel(tool, t)).toBe(label)

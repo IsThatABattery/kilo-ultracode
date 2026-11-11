@@ -152,6 +152,9 @@ import type { PRReviewCommentData, ReviewMessageData } from "./shared/review-com
 import { feedbackMetadata, parseFeedback, type BrowserFeedbackData } from "./shared/browser-feedback"
 import { mergeInjected } from "./shared/injected-prompt"
 import { completesWithoutStatus, goalControl } from "./kilo-provider/command-completion"
+import { flag, keywordMetadata, ultracodeField, type PromptOptions } from "./kilo-provider/prompt-options"
+import { routeWorkflowMessage } from "./kilo-provider/workflow"
+import { runningAgents, workflowAgent, workflowBackground } from "./kilo-provider/workflow-run"
 import { KiloProviderMemory } from "./kilo-provider/memory"
 
 import {
@@ -261,6 +264,8 @@ type SendWebviewMessage = {
   modelID?: string
   agent?: string
   variant?: string
+  ultracode?: unknown
+  noUltracode?: unknown
   files?: unknown
   review?: unknown
   browserFeedback?: unknown
@@ -511,6 +516,14 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
   private epoch = 0
   private sessionDirectories = new Map<string, string>() // Per-session directory overrides, such as Agent Manager worktrees.
   private readonly owners = new Map<string, { dir: string; project: string }>()
+  // Workflow agents running in their own worktree → that worktree and their launching session's directory.
+  private readonly isolated = new Map<string, { dir: string; home: string }>()
+  // Workflow agent sessions this panel tracks for their prompts; their transcripts stream only while shown.
+  private readonly workflowAgents = new Set<string>()
+  // Sessions whose workflow runs were checked for running agents on this connection.
+  private readonly scanned = new Set<string>()
+  // Whether the backend runs dynamic workflows, until the config reports it; asked once per connection.
+  private capability: Promise<boolean> | undefined
   private sessionGitDirectories = new Map<string, string>() // Stable Git root resolved for each session.
   private sessionGitRecoveries = new Set<string>() // Sessions whose older history was scanned for a Git root.
   private readonly aborts = new SessionAbort()
@@ -1182,6 +1195,9 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     while (this.promptRecoveryQueued && this.isWebviewReady) {
       if (!this.client) return
       this.promptRecoveryQueued = false
+      await this.adoptRunningAgents().catch((err: unknown) =>
+        console.error("[Kilo New] KiloProvider: Failed to adopt running workflow agents:", err),
+      )
       await Promise.all([
         fetchAndSendPendingPermissions(this.permissionCtx),
         fetchAndSendPendingQuestions(this.questionCtx),
@@ -1311,6 +1327,14 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
         return
       }
       if (this.handleEditorOpenMessage(message)) return
+      if (
+        await routeWorkflowMessage(message, {
+          client: this.client,
+          dir: (sid) => this.getWorkspaceDirectory(sid),
+          post: (msg) => this.postMessage(msg),
+        })
+      )
+        return
       if (await this.handleMcpMessage(message)) return
       if (await this.handleAgentManagerSettingsMessage(message)) return
       if (await this.handleAutoCleanupMessage(message)) return
@@ -1385,6 +1409,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
             parseMessageFiles(message.files),
             typeof message.agentManagerContext === "string" ? message.agentManagerContext : undefined,
             typeof msg.contextDirectory === "string" ? msg.contextDirectory : undefined,
+            { ultracode: flag(message.ultracode) },
           )
           break
         }
@@ -1490,7 +1515,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
             "kilo-code.new.openSubAgentViewer",
             message.sessionID,
             message.title,
-            this.getWorkspaceDirectory(message.parentSessionID),
+            this.isolated.get(message.sessionID)?.dir ?? this.getWorkspaceDirectory(message.parentSessionID),
           )
           break
         case "saveImage":
@@ -1698,6 +1723,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
             typeof message.commandArgs === "string" ? message.commandArgs : undefined,
             feedback?.browserFeedback,
             typeof message.injectedTitle === "string" ? message.injectedTitle : undefined,
+            { ultracode: flag(message.ultracode), noUltracode: flag(message.noUltracode) },
           )
           break
         }
@@ -1792,6 +1818,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       typeof message.contextDirectory === "string" ? message.contextDirectory : undefined,
       feedback?.browserFeedback,
       typeof message.injectedTitle === "string" ? message.injectedTitle : undefined,
+      { ultracode: flag(message.ultracode), noUltracode: flag(message.noUltracode) },
     )
   }
 
@@ -2073,6 +2100,9 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
           if (event.type === "session.created" && this.matchesPendingFollowup(event.properties.info)) {
             return true
           }
+          if (event.type === "session.created" && workflowAgent(event.properties.info, (id) => this.tracked(id))) {
+            return true
+          }
 
           // session.status must always pass through — even for sessions not tracked by this
           // KiloProvider instance. The Settings panel is a separate provider with no tracked
@@ -2095,7 +2125,8 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
           // the webview just cleaned up.
           if (event.type === "session.deleted") return true
 
-          return this.trackedSessionIds.has(sessionId)
+          if (!this.trackedSessionIds.has(sessionId)) return false
+          return !this.muted(sessionId) || workflowBackground(event)
         },
         (payload, directory) => {
           const event = unwrapSyncEvent(payload)
@@ -2108,6 +2139,9 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
         if (this.connectionState !== state) {
           this.connectionGeneration++
           this.configBindings.clear()
+          // Agents started while disconnected were never seen: check the runs again once connected.
+          this.scanned.clear()
+          this.capability = undefined
         }
         this.connectionState = state
         this.postConnectionState(error)
@@ -2476,7 +2510,10 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     // Inherit the parent's worktree directory so permission responses use
     // the correct backend Instance. Without this, child sessions in Agent
     // Manager worktrees fall back to workspace root and fail to find the
-    // pending permission request.
+    // pending permission request. A workflow agent in its own worktree keeps
+    // that worktree, even after an earlier release dropped its directory.
+    const own = this.isolated.get(sessionID)?.dir
+    if (own && !this.sessionDirectories.has(sessionID)) this.sessionDirectories.set(sessionID, own)
     if (!this.sessionDirectories.has(sessionID) && parentSessionID) {
       const dir = this.sessionDirectories.get(parentSessionID)
       if (dir) {
@@ -2538,6 +2575,12 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       return
     }
     if (!this.syncedChildSessions.delete(sessionID)) return
+    // A workflow agent stays tracked, so a prompt it asks after its tab closes still shows.
+    if (this.workflowAgents.has(sessionID)) {
+      this.streams.drop(sessionID)
+      this.visibleTaskStreams.delete(sessionID)
+      return
+    }
     const status = this.sessionStatusMap.get(sessionID)
     // Offline is not the end of a turn: the session reconnects and continues. Keep the owner so a
     // later status can clear the offline state on the row.
@@ -2700,6 +2743,8 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     this.inspectorSessionIds.delete(sessionID)
     this.sessionDirectories.delete(sessionID)
     this.owners.delete(sessionID)
+    this.isolated.delete(sessionID)
+    this.workflowAgents.delete(sessionID)
     this.sessionGitDirectories.delete(sessionID)
     this.sessionGitRecoveries.delete(sessionID)
     this.aborts.delete(sessionID)
@@ -4716,6 +4761,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     contextDirectory?: string,
     browserFeedback?: BrowserFeedbackData,
     injectedTitle?: string,
+    opts: PromptOptions = {},
   ): Promise<void> {
     if (!this.client) {
       this.postMessage({
@@ -4752,7 +4798,10 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       parts.push({
         type: "text",
         text,
-        metadata: mergeInjected(feedbackMetadata(review, browserFeedback), injectedTitle),
+        metadata: keywordMetadata(
+          mergeInjected(feedbackMetadata(review, browserFeedback), injectedTitle),
+          opts.noUltracode,
+        ),
       })
 
       const editorContext = await this.gatherEditorContext(dir)
@@ -4781,6 +4830,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
               model: providerID && modelID ? { providerID, modelID } : undefined,
               agent,
               variant,
+              ...ultracodeField(opts.ultracode),
               editorContext,
               snapshotInitialization: this.opts.snapshotInitialization,
             }),
@@ -4817,6 +4867,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     files?: MessageFile[],
     context?: string,
     contextDirectory?: string,
+    opts: PromptOptions = {},
   ): Promise<void> {
     if (!this.client) {
       this.postMessage({
@@ -4870,6 +4921,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
           model: !control && providerID && modelID ? `${providerID}/${modelID}` : undefined,
           agent: control ? undefined : agent,
           variant: control ? undefined : variant,
+          ...(control ? {} : ultracodeField(opts.ultracode)),
           parts,
           snapshotInitialization: this.opts.snapshotInitialization,
         })
@@ -5576,6 +5628,9 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     if (event.type === "session.created" && this.adoptPendingFollowup(event.properties.info)) {
       return
     }
+    if (event.type === "session.created" && this.adoptWorkflowAgent(event.properties.info)) {
+      return
+    }
 
     const sessionID = this.resolveEventSessionId(event)
 
@@ -5585,6 +5640,19 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     if (!sessionID && isSessionScopedPartEvent(event.type)) return
     if (this.postModelUsageChanged(event, sessionID)) return
     if (event.type !== "session.deleted" && sessionID && !this.trackedSessionIds.has(sessionID)) return
+
+    // A workflow agent nobody views keeps its transcript on the backend. Of its part updates, only a
+    // nested task child (to track its prompts) and a finished step (model usage) still matter here.
+    if (sessionID && this.muted(sessionID)) {
+      if (!workflowBackground(event)) return
+      if (event.type === "message.part.updated") {
+        const part = event.properties.part as Parameters<typeof childID>[0]
+        const child = childID(part)
+        if (child && !this.trackedSessionIds.has(child)) void this.handleSyncSession(child, sessionID)
+        if (part.type === "step-finish") this.postMessage({ type: "sessionModelUsageChanged", sessionID })
+        return
+      }
+    }
 
     // Streamed tool input becomes pending part updates, so a tool row shows its
     // arguments while the model still generates them.
@@ -6053,11 +6121,16 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
 
   // Activity events pass the directory gate for sessions this panel owns, so an inactive project's
   // sidebar row keeps a current state. The tracked-session check still applies to these events.
+  // A workflow agent run with isolation: 'worktree' lives outside the project's directories: its
+  // creation always passes, then its events from its own worktree pass as its launching session's would.
   private routed(event: ProviderEvent, directory?: string): boolean {
-    if (!ACTIVITY_EVENTS.has(event.type)) return false
+    if (event.type === "session.created" && workflowAgent(event.properties.info, (id) => this.tracked(id))) return true
     const props = event.properties
     const sid = "sessionID" in props && typeof props.sessionID === "string" ? props.sessionID : undefined
-    return sid !== undefined && this.owned(sid, directory)
+    if (sid === undefined) return false
+    const home = this.isolated.get(sid)?.home
+    const open = ACTIVITY_EVENTS.has(event.type) || (home !== undefined && this.isCurrentProjectDirectory(home))
+    return open && this.owned(sid, directory)
   }
 
   private isCurrentProjectSession(sessionID: string): boolean {
@@ -6190,6 +6263,81 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       return workspaceFolders[0]!.uri.fsPath
     }
     return process.cwd()
+  }
+
+  private tracked(sessionID: string) {
+    return this.trackedSessionIds.has(sessionID)
+  }
+
+  /** A workflow agent whose transcript no surface of this panel shows. */
+  private muted(sessionID: string) {
+    return (
+      this.workflowAgents.has(sessionID) &&
+      !this.syncedChildSessions.has(sessionID) &&
+      !this.visibleTaskStreams.has(sessionID) &&
+      !this.openSessionIds.has(sessionID) &&
+      this.currentSession?.id !== sessionID
+    )
+  }
+
+  /**
+   * Track a workflow agent session of a tracked session so its permission and question prompts show.
+   * An agent run with isolation: 'worktree' lives in its own worktree, so record that directory: its
+   * events then pass the directory gate and its permission, question and abort replies reach its instance.
+   */
+  private adoptWorkflowAgent(session: Session) {
+    if (!workflowAgent(session, (id) => this.tracked(id))) return false
+    this.trackedSessionIds.add(session.id)
+    this.workflowAgents.add(session.id)
+    const parent = session.parentID ?? ""
+    const home = this.getWorkspaceDirectory(parent)
+    if (session.directory && !sameDirectory(session.directory, home)) {
+      this.isolated.set(session.id, { dir: session.directory, home })
+      this.sessionDirectories.set(session.id, session.directory)
+    }
+    const dir = this.sessionDirectories.get(parent)
+    if (dir && !this.sessionDirectories.has(session.id)) this.sessionDirectories.set(session.id, dir)
+    // A worktree is its own checkout, so only an agent in its parent's directory shares the parent's Git root.
+    const git = this.isolated.has(session.id) ? undefined : this.sessionGitDirectories.get(parent)
+    if (git && !this.sessionGitDirectories.has(session.id)) this.sessionGitDirectories.set(session.id, git)
+    // sessionUpdated (not sessionCreated) only records the child, so it never becomes the open session.
+    this.postMessage({ type: "sessionUpdated", session: this.sessionToWebview(session) })
+    return true
+  }
+
+  /** Whether the backend runs dynamic workflows: the loaded config's features, else the server's capabilities. */
+  private workflows(client: KiloClient) {
+    const known = (this.cachedConfigMessage as { features?: { workflows?: unknown } } | null)?.features?.workflows
+    if (typeof known === "boolean") return Promise.resolve(known)
+    this.capability ??= serverFeatures(client, this.getWorkspaceDirectory()).then((caps) => caps.workflows)
+    return this.capability
+  }
+
+  /**
+   * Adopt the agents already running in tracked sessions' workflow runs, before prompt recovery looks for
+   * their pending prompts. Live adoption only sees an agent's session.created, which a panel that opens,
+   * reloads or reconnects mid-run (or a session opened mid-run) missed. Each session is checked once per
+   * connection; agents started later still arrive through session.created. Agents and task children
+   * launch no workflows, so they are skipped.
+   */
+  private async adoptRunningAgents() {
+    const client = this.client
+    if (!client) return
+    for (const id of this.scanned) if (!this.trackedSessionIds.has(id)) this.scanned.delete(id)
+    const ids = [...this.trackedSessionIds].filter(
+      (id) => !this.scanned.has(id) && !this.workflowAgents.has(id) && !this.syncedChildSessions.has(id),
+    )
+    if (ids.length === 0 || !(await this.workflows(client))) return
+    await Promise.all(
+      ids.map(async (id) => {
+        this.scanned.add(id)
+        const found = await runningAgents(client, id, this.getWorkspaceDirectory(id), (sid) =>
+          this.workflowAgents.has(sid),
+        )
+        if (!found.complete) this.scanned.delete(id)
+        for (const session of found.sessions) this.adoptWorkflowAgent(session)
+      }),
+    )
   }
 
   private trackDirectory(sessionId: string, dir: string) {
@@ -6375,6 +6523,9 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     this.draftSessions.clear()
     this.sessionDirectories.clear()
     this.owners.clear()
+    this.isolated.clear()
+    this.workflowAgents.clear()
+    this.scanned.clear()
     this.anacondaDesktop.dispose()
     this.aborts.clear()
     this.requests.clear()

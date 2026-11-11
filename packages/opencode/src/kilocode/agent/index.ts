@@ -215,7 +215,17 @@ function askEditGuard() {
 // `agent.<name>.permission`, which merges after patchAgents in agent.ts.
 // Exported so KiloTask.inherited carries the same set into delegated sessions; a tool
 // guarded here but not there would be reachable again through a subagent.
-export const guarded = ["bash", "task", "notebook_edit", "notebook_execute", "write", "agent_manager", "repo_clone"]
+export const guarded = [
+  "bash",
+  "task",
+  "notebook_edit",
+  "notebook_execute",
+  "write",
+  "agent_manager",
+  "repo_clone",
+  // Dynamic workflows spawn agents that can edit and run commands.
+  "workflow",
+]
 
 // Derived from `guarded` so the two cannot drift. `bash` and `task` carry their own rules
 // in the guards, so they are denied there instead.
@@ -371,6 +381,14 @@ export interface KiloData {
   board: boolean
 }
 
+/** Hidden agent that runs each workflow script `agent()` call (see patchAgents). */
+export const WORKFLOW_SUBAGENT = "workflow-subagent"
+
+/** Files of persisted workflow runs (`<data>/workflow/<sessionID>/<runID>/…`). */
+export function workflowDir() {
+  return path.join(Global.Path.data, "workflow", "*")
+}
+
 // Prepare kilo-specific data derived from config. Call once per state initialization.
 export function prepare(cfg: Config.Info, flags: Pick<RuntimeFlags.Info, "experimentalSharedAgentBoard">): KiloData {
   const mcpRules = getMcpRules(cfg)
@@ -389,6 +407,12 @@ export function prepare(cfg: Config.Info, flags: Pick<RuntimeFlags.Info, "experi
     ...(Flag.KILO_CLIENT === "jetbrains" ? { edit: "ask" as const } : {}),
     kilo_memory_recall: "ask",
     kilo_memory_save: "ask",
+    // Launching a dynamic workflow fans out many agents, so it asks unless the user allows it.
+    workflow: "ask",
+    // Workflow runs persist their script, journal and output under the data dir; the launching
+    // agent reads and edits those files to iterate on and resume a run. Delegated sessions (task
+    // subagents, workflow agents) deny them through KiloTask.permissions.
+    external_directory: { [workflowDir()]: "allow" },
   })
   return { mcpRules, defaultsPatch, board: enabled }
 }
@@ -458,7 +482,7 @@ export function harden(item?: { name: string; permission: Permission.Ruleset }) 
   item.permission = hardRules()
 }
 
-export function hardenSystemAgents<T extends { name: string; permission: Permission.Ruleset }>(
+export function hardenSystemAgents<T extends { name: string; mode?: string; permission: Permission.Ruleset }>(
   agents: Record<string, T>,
 ) {
   for (const [key, item] of Object.entries(agents)) {
@@ -467,6 +491,13 @@ export function hardenSystemAgents<T extends { name: string; permission: Permiss
       continue
     }
     harden(item)
+    // The workflow subagent only runs under a workflow script, so primary agents' task tool neither
+    // lists nor launches it. Only primaries: any `task` rule on a possible subagent would stop
+    // deriveSubagentSessionPermission from adding its default task deny. Skipped where task is
+    // already off, since a trailing pattern rule would make Permission.disabled show it again.
+    if (item.mode === "primary" && Permission.disabled(["task"], item.permission).size === 0) {
+      item.permission = [...item.permission, { permission: "task", pattern: WORKFLOW_SUBAGENT, action: "deny" }]
+    }
   }
 }
 
@@ -481,7 +512,7 @@ export function telemetryOptions(_cfg: Config.Info) {
 // - Patch plan with readOnlyBash, mcpRules, .kilo paths
 // - Patch explore permissions and prompt
 // - Patch appropriate agents with semantic_search
-// - Add debug, orchestrator, ask agents
+// - Add debug, orchestrator, ask agents and the hidden workflow-subagent
 export function patchAgents(
   agents: Record<
     string,
@@ -579,6 +610,30 @@ export function patchAgents(
       ),
       prompt: PROMPT_EXPLORE,
     }
+  }
+
+  // Internal subagent that runs each workflow script agent() call. No custom prompt, so the
+  // provider base prompt applies; the workflow layer adds its return-value instructions. It may
+  // not delegate, start nested workflows, or ask the user anything.
+  agents[WORKFLOW_SUBAGENT] = {
+    name: WORKFLOW_SUBAGENT,
+    description: "Internal subagent for workflow script orchestration.",
+    options: {},
+    permission: Permission.merge(
+      defaults,
+      Permission.fromConfig({
+        todowrite: "deny",
+      }),
+      user,
+      Permission.fromConfig({
+        task: "deny",
+        workflow: "deny",
+        question: "deny",
+      }),
+    ),
+    mode: "subagent",
+    native: true,
+    hidden: true,
   }
 
   // Add debug agent

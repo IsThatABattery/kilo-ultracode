@@ -1,6 +1,17 @@
-import type { PermissionRule } from "../../types/messages"
+import type { PermissionRequest, PermissionRule } from "../../types/messages"
 
 export type RuleDecision = "approved" | "denied" | "pending"
+
+/**
+ * The auto-approve rules a permission prompt offers to save. Bash and browser asks send finer rules in
+ * metadata.rules, other tools their always list. An ask that disables "always" offers none, like the
+ * CLI's Allow once / Reject: a workflow script the model wrote (only a saved workflow run by name can be
+ * approved for good), a protected config path or a memory save.
+ */
+export function savableRules(request: Pick<PermissionRequest, "always" | "args">) {
+  if (request.args?.disableAlways === true) return []
+  return request.args?.rules ?? request.always ?? []
+}
 
 // Escape control and bidi/format characters when displaying a skill-shell command, so a
 // command can't repaint the prompt or use Trojan-Source reordering to make the visible text
@@ -59,6 +70,7 @@ export const TOOL_LABEL_KEYS: Record<string, string> = {
   task: "ui.permission.toolLabel.task",
   skill: "ui.permission.toolLabel.skill",
   lsp: "ui.permission.toolLabel.lsp",
+  workflow: "ui.permission.toolLabel.workflow",
 }
 
 export type PatternDescription = { kind: "single"; text: string } | { kind: "multi"; title: string; paths: string[] }
@@ -114,4 +126,19 @@ export function describePatterns(
   const label = resolveLabel(tool, t)
   if (filtered.length === 1) return { kind: "single", text: `${label} ${displayPattern(tool, filtered[0])}` }
   return { kind: "multi", title: `${label}:`, paths: filtered.map((pattern) => displayPattern(tool, pattern)) }
+}
+
+/**
+ * The planned phases a workflow launch asks about (`metadata.phases` of the `workflow` permission),
+ * shown like Claude Code's approval card. The metadata comes from the model's script, so keep only
+ * well-formed entries.
+ */
+export function workflowPhases(args: Record<string, unknown>) {
+  const list = Array.isArray(args.phases) ? (args.phases as unknown[]) : []
+  return list.flatMap((item) => {
+    if (!item || typeof item !== "object") return []
+    const phase = item as { title?: unknown; detail?: unknown }
+    if (typeof phase.title !== "string" || !phase.title) return []
+    return [{ title: phase.title, detail: typeof phase.detail === "string" && phase.detail ? phase.detail : undefined }]
+  })
 }

@@ -4,6 +4,7 @@ import { Agent } from "@/agent/agent"
 import { Permission } from "@/permission"
 import { PartID } from "@/session/schema"
 import { Session } from "@/session/session"
+import { KiloUltracode } from "@/kilocode/workflow/ultracode"
 import AGENT_SWITCH from "./agent-switch.txt"
 import { KiloSessionPrompt } from "./prompt"
 
@@ -18,6 +19,8 @@ import { KiloSessionPrompt } from "./prompt"
  * catch-all edit rule describes them accurately. Custom and organization
  * agents get a neutral line, because scoped allowlists (for example
  * `docs/**`) cannot be summarised safely from a catch-all check.
+ *
+ * Ultracode adds its own persisted per-turn reminder (see KiloUltracode.apply).
  */
 export namespace KiloModeReminders {
   export type Target = Pick<Agent.Info, "name" | "displayName" | "permission" | "native">
@@ -64,6 +67,9 @@ export namespace KiloModeReminders {
         messages: input.messages,
       }),
     )
+
+    // Ultracode reminders are independent of agent switches, so they run before the switch early return.
+    yield* KiloUltracode.apply({ ...input, user })
 
     const prior = input.messages.findLast((msg) => msg.info.id !== user.info.id)
     const text = transition({ current: input.agent, prior: prior?.info.agent })

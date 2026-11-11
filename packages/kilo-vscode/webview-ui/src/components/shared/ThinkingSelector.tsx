@@ -1,7 +1,8 @@
 /**
  * ThinkingSelector component
  * Popover-based dropdown for choosing a thinking effort variant.
- * Only rendered when the selected model supports reasoning variants.
+ * Only rendered when the selected model supports reasoning variants, or when
+ * it carries the ultracode switch (which every model supports).
  *
  * ThinkingSelectorBase — reusable core that accepts variants/value/onSelect props.
  * ThinkingSelector     — thin wrapper wired to session context for chat usage.
@@ -11,6 +12,7 @@ import { type Accessor, Component, createEffect, createSignal, For, onCleanup, S
 import { PopupSelector } from "./PopupSelector"
 import { Button } from "@kilocode/kilo-ui/button"
 import { Tooltip } from "@kilocode/kilo-ui/tooltip"
+import { Switch } from "@kilocode/kilo-ui/switch"
 import { useSession } from "../../context/session"
 import { useConfig } from "../../context/config"
 import { useLanguage } from "../../context/language"
@@ -52,6 +54,11 @@ export interface ThinkingSelectorBaseProps {
   blocked?: boolean
   /** Short title shown above the options, so the list explains itself. */
   heading?: string
+  /**
+   * Ultracode switch shown under the options. When set, the popover opens even
+   * for a model without variants, and the trigger reads "· Ultracode" while on.
+   */
+  ultracode?: { checked: boolean; onChange: (value: boolean) => void; label: string; description: string }
 }
 
 export const ThinkingSelectorBase: Component<ThinkingSelectorBaseProps> = (props) => {
@@ -65,6 +72,8 @@ export const ThinkingSelectorBase: Component<ThinkingSelectorBaseProps> = (props
     return props.allowClear ? [undefined, ...props.variants] : props.variants
   }
   const clearLabel = () => props.clearLabel ?? "Not set"
+  const visible = () => rows().length > 0 || !!props.ultracode
+  const checked = () => !!props.ultracode?.checked
 
   function display(value: string | undefined) {
     if (!value) return clearLabel()
@@ -108,7 +117,7 @@ export const ThinkingSelectorBase: Component<ThinkingSelectorBaseProps> = (props
   const onTrigger = (event: Event) => {
     const source = (event as CustomEvent<{ source?: string }>).detail?.source
     if (source !== props.trigger || props.blocked) return
-    if (rows().length === 0) return
+    if (!visible()) return
     onOpen(true)
   }
   createEffect(() => {
@@ -182,13 +191,19 @@ export const ThinkingSelectorBase: Component<ThinkingSelectorBaseProps> = (props
     }
   }
 
+  const tooltip = () => {
+    const suffix = checked() ? ` · ${props.ultracode?.label}` : ""
+    if (rows().length === 0) return props.ultracode?.label ?? ""
+    return `${language.t("prompt.thinking.tooltip")}: ${display(props.value)}${suffix}`
+  }
+
   return (
-    <Show when={rows().length > 0}>
+    <Show when={visible()}>
       <Tooltip
         value={
           <div data-slot="tooltip-keybind">
-            <span>{`${language.t("prompt.thinking.tooltip")}: ${display(props.value)}`}</span>
-            <Show when={props.cycleHint}>
+            <span>{tooltip()}</span>
+            <Show when={props.cycleHint && rows().length > 0}>
               <span data-slot="tooltip-keybind-key">Shift+Tab</span>
             </Show>
           </div>
@@ -199,7 +214,7 @@ export const ThinkingSelectorBase: Component<ThinkingSelectorBaseProps> = (props
         <PopupSelector
           expanded={false}
           placement={props.placement ?? "top-start"}
-          preferredWidth={180}
+          preferredWidth={props.ultracode ? 240 : 180}
           minHeight={100}
           portal={props.portal}
           deferDismiss={props.deferDismiss}
@@ -214,8 +229,15 @@ export const ThinkingSelectorBase: Component<ThinkingSelectorBaseProps> = (props
                 {(label) => (
                   <span class="thinking-selector-trigger-label" data-unset={props.value ? undefined : ""}>
                     {label}
+                    {/* Inside the label, so it collapses with it and PromptSelectors measures both together. */}
+                    <Show when={checked()}>
+                      <span aria-hidden="true">{" ·"}</span>
+                    </Show>
                   </span>
                 )}
+              </Show>
+              <Show when={checked()}>
+                <span class="thinking-selector-trigger-suffix">{props.ultracode?.label}</span>
               </Show>
               <svg
                 class="selector-trigger-chevron"
@@ -231,35 +253,53 @@ export const ThinkingSelectorBase: Component<ThinkingSelectorBaseProps> = (props
           }
         >
           {(bodyH) => (
-            <div
-              class="thinking-selector-list"
-              role="listbox"
-              aria-label={props.heading}
-              ref={listRef}
-              onKeyDown={onKeyDown}
-              style={bodyH() !== undefined ? { "max-height": `${bodyH()}px` } : {}}
-            >
-              <Show when={props.heading}>
-                <div class="thinking-selector-heading" aria-hidden="true">
-                  {props.heading}
+            <>
+              <Show when={rows().length > 0}>
+                <div
+                  class="thinking-selector-list"
+                  role="listbox"
+                  aria-label={props.heading}
+                  ref={listRef}
+                  onKeyDown={onKeyDown}
+                  style={bodyH() !== undefined ? { "max-height": `${bodyH()}px` } : {}}
+                >
+                  <Show when={props.heading}>
+                    <div class="thinking-selector-heading" aria-hidden="true">
+                      {props.heading}
+                    </div>
+                  </Show>
+                  <For each={rows()}>
+                    {(v, i) => (
+                      <div
+                        class={`thinking-selector-item${props.value === v ? " selected" : ""}`}
+                        role="option"
+                        aria-selected={props.value === v}
+                        tabindex={focused() === i() ? 0 : -1}
+                        data-autofocus={focused() === i() ? "" : undefined}
+                        onClick={() => pick(v)}
+                        onFocus={() => setFocused(i())}
+                      >
+                        <span class="thinking-selector-item-name">{display(v)}</span>
+                      </div>
+                    )}
+                  </For>
                 </div>
               </Show>
-              <For each={rows()}>
-                {(v, i) => (
-                  <div
-                    class={`thinking-selector-item${props.value === v ? " selected" : ""}`}
-                    role="option"
-                    aria-selected={props.value === v}
-                    tabindex={focused() === i() ? 0 : -1}
-                    data-autofocus={focused() === i() ? "" : undefined}
-                    onClick={() => pick(v)}
-                    onFocus={() => setFocused(i())}
-                  >
-                    <span class="thinking-selector-item-name">{display(v)}</span>
+              {/* Outside the listbox: its key handler and pick() would treat the switch as an option and close. */}
+              <Show when={props.ultracode}>
+                {(ultra) => (
+                  <div class="thinking-selector-ultracode" data-divided={rows().length > 0 ? "" : undefined}>
+                    <Switch
+                      checked={ultra().checked}
+                      onChange={(value) => ultra().onChange(value)}
+                      description={ultra().description}
+                    >
+                      {ultra().label}
+                    </Switch>
                   </div>
                 )}
-              </For>
-            </div>
+              </Show>
+            </>
           )}
         </PopupSelector>
       </Tooltip>
@@ -278,9 +318,18 @@ interface ThinkingSelectorProps {
 
 export const ThinkingSelector: Component<ThinkingSelectorProps> = (props) => {
   const session = useSession()
-  const { settings } = useConfig()
+  const { settings, features } = useConfig()
   const language = useLanguage()
   const id = () => props.sessionID?.()
+  const ultracode = () =>
+    features().workflows
+      ? {
+          checked: session.ultracode.current(id()),
+          onChange: (value: boolean) => session.ultracode.select(value, id()),
+          label: language.t("prompt.ultracode.label"),
+          description: language.t("prompt.ultracode.description"),
+        }
+      : undefined
 
   return (
     <ThinkingSelectorBase
@@ -293,6 +342,7 @@ export const ThinkingSelector: Component<ThinkingSelectorProps> = (props) => {
       clearLabel={language.t("common.default")}
       heading={language.t("prompt.thinking.tooltip")}
       cycleHint={settings()["chat.shiftTabCyclesVariant"] !== false}
+      ultracode={ultracode()}
     />
   )
 }

@@ -224,6 +224,60 @@ const ExperimentalTab: Component = () => {
         </SettingsRow>
 
         <SettingsRow
+          title={language.t("settings.experimental.workflows.title")}
+          description={language.t("settings.experimental.workflows.description")}
+        >
+          <Switch
+            checked={experimental().workflows ?? true}
+            onChange={(checked) => updateExperimental("workflows", checked)}
+            hideLabel
+          >
+            {language.t("settings.experimental.workflows.title")}
+          </Switch>
+        </SettingsRow>
+
+        <Show when={experimental().workflows !== false}>
+          <SettingsRow
+            title={language.t("settings.experimental.ultracode.title")}
+            description={language.t("settings.experimental.ultracode.description")}
+          >
+            <Switch
+              checked={experimental().ultracode ?? false}
+              onChange={(checked) => updateExperimental("ultracode", checked)}
+              hideLabel
+            >
+              {language.t("settings.experimental.ultracode.title")}
+            </Switch>
+          </SettingsRow>
+
+          <SettingsRow
+            title={language.t("settings.experimental.ultracodeKeyword.title")}
+            description={language.t("settings.experimental.ultracodeKeyword.description")}
+          >
+            <Switch
+              checked={experimental().ultracode_keyword ?? true}
+              onChange={(checked) => updateExperimental("ultracode_keyword", checked)}
+              hideLabel
+            >
+              {language.t("settings.experimental.ultracodeKeyword.title")}
+            </Switch>
+          </SettingsRow>
+
+          <SettingsRow
+            title={language.t("settings.experimental.claudeWorkflows.title")}
+            description={language.t("settings.experimental.claudeWorkflows.description")}
+          >
+            <Switch
+              checked={experimental().claude_workflows ?? false}
+              onChange={(checked) => updateExperimental("claude_workflows", checked)}
+              hideLabel
+            >
+              {language.t("settings.experimental.claudeWorkflows.title")}
+            </Switch>
+          </SettingsRow>
+        </Show>
+
+        <SettingsRow
           title={language.t("settings.experimental.agentManagerSplash.title")}
           description={language.t("settings.experimental.agentManagerSplash.description")}
         >

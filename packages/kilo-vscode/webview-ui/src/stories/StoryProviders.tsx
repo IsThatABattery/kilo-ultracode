@@ -268,6 +268,7 @@ export function mockSessionValue(overrides?: {
     setSessionModel: noop,
     setSessionAgent: noop,
     setSessionVariant: noop,
+    ultracode: { current: () => false, select: noop, toggle: () => false },
     revert: () => undefined,
     revertedCount: () => 0,
     summary: () => undefined,
@@ -371,6 +372,7 @@ const ConfigWrapper: ParentComponent<{
         sandboxControls: props.features?.sandboxControls ?? false,
         backgroundSubagents: props.features?.backgroundSubagents ?? false,
         speechToText: props.features?.speechToText ?? true,
+        workflows: props.features?.workflows ?? false,
       }
     })
 

@@ -172,6 +172,23 @@
     word-break: break-all;
   }
 
+  /* A workflow launch's planned phases and its token caution. */
+  [data-slot="permission-phases"] {
+    margin: 0;
+    padding-inline-start: 20px;
+  }
+
+  [data-slot="permission-phase"] {
+    font-size: var(--kilo-font-size-12);
+    overflow-wrap: anywhere;
+  }
+
+  [data-slot="permission-phase-detail"],
+  [data-slot="permission-caution"] {
+    font-size: var(--kilo-font-size-12);
+    color: var(--text-weak, var(--vscode-descriptionForeground));
+  }
+
   /* The only scroll region of the card. It shrinks before anything else, so the
      description, command and diffs stay reachable by scrolling while the header
      and the Allow/Deny row keep their space no matter how tall the diff is or

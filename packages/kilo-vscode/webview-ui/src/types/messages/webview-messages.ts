@@ -14,6 +14,7 @@ import type { AnacondaDesktopWebviewMessage } from "../../../../src/shared/anaco
 import type { RequestMigrationDataMessage, StartMigrationMessage } from "./migration"
 import type { MemoryShowMessage, MemoryOperationMessage, RequestMemoryMessage } from "./memory"
 import type { RequestSessionBoardMessage, ResetSessionBoardMessage } from "./board"
+import type { RequestWorkflowRunMessage, SetUltracodeRequest, WorkflowControlRequest } from "./workflow"
 import type { Activity } from "../../utils/session-activity"
 import type { PRReactionContent } from "../../../agent-manager/pr/pr-types"
 import type { PRMergeRequest } from "../../../../src/shared/pr-comment-actions"
@@ -33,6 +34,10 @@ export interface SendMessageRequest {
   modelID?: string
   agent?: string
   variant?: string
+  /** Explicit ultracode choice; omitted when the backend lacks workflows. */
+  ultracode?: boolean
+  /** The user dismissed the `ultracode` keyword in the prompt, so it does not opt this message in. */
+  noUltracode?: boolean
   files?: FileAttachment[]
   review?: ReviewMessageData
   browserFeedback?: BrowserFeedbackData
@@ -156,6 +161,8 @@ export interface ImportAndSendMessage {
   modelID?: string
   agent?: string
   variant?: string
+  ultracode?: boolean
+  noUltracode?: boolean
   files?: FileAttachment[]
   review?: ReviewMessageData
   browserFeedback?: BrowserFeedbackData
@@ -358,6 +365,7 @@ export interface SendCommandRequest {
   modelID?: string
   agent?: string
   variant?: string
+  ultracode?: boolean
   files?: FileAttachment[]
   agentManagerContext?: string
   contextDirectory?: string
@@ -1111,6 +1119,8 @@ export interface CreateMultiVersionRequest {
   // When set, each entry expands to `count` versions with that model.
   // Overrides `versions`, `providerID`, and `modelID`.
   variant?: string
+  /** Ultracode for every created session; omitted when the backend lacks workflows. */
+  ultracode?: boolean
   modelAllocations?: ModelAllocation[]
   // When set, start each created worktree session with the sandbox override
   // reconciled to this state. Only sent when sandbox controls are available.
@@ -1768,6 +1778,9 @@ export type WebviewMessage =
   | ResetSessionBoardMessage
   | CancelBackgroundJobMessage
   | PromoteBackgroundJobMessage
+  | SetUltracodeRequest
+  | RequestWorkflowRunMessage
+  | WorkflowControlRequest
   | RevertSessionRequest
   | UnrevertSessionRequest
   | DeleteMessageRequest

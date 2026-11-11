@@ -4,6 +4,7 @@ import {
   initialCommand,
   initialMessage,
   initialVariant,
+  seedInitialUltracode,
   seedInitialVariant,
 } from "../../webview-ui/agent-manager/initial-message"
 
@@ -236,5 +237,29 @@ describe("Agent Manager initial message", () => {
     )
 
     expect(calls).toEqual([["session-a", "anthropic", "claude-sonnet-4", variant, "code"]])
+  })
+})
+
+describe("initial ultracode", () => {
+  const base = {
+    type: "agentManager.sendInitialMessage" as const,
+    sessionId: "session-a",
+    worktreeId: "wt-a",
+    providerID: "anthropic",
+    modelID: "claude-sonnet-4",
+  }
+
+  it("carries the dialog choice on the first message and command", () => {
+    expect(initialMessage({ ...base, text: "build it", ultracode: true })?.ultracode).toBe(true)
+    expect(initialCommand({ ...base, command: "review", arguments: "", ultracode: false })?.ultracode).toBe(false)
+  })
+
+  it("seeds an explicit choice into the session and leaves an absent one alone", () => {
+    const calls: unknown[] = []
+    const session = { ultracode: { select: (...args: unknown[]) => calls.push(args) } }
+    seedInitialUltracode(session, base)
+    expect(calls).toEqual([])
+    seedInitialUltracode(session, { ...base, ultracode: true })
+    expect(calls).toEqual([[true, "session-a"]])
   })
 })

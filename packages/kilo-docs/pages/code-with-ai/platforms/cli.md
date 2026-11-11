@@ -119,6 +119,8 @@ The `kilo console` command and its browser interface are deprecated and will be 
 | `/models` | Switch model |
 | `/agents` | Switch agent |
 | `/mcps` | Toggle MCPs |
+| `/ultracode` | Toggle [ultracode](/docs/code-with-ai/features/workflows#ultracode) for the current session |
+| `/workflows` | Watch, stop, pause, or save the current session's [dynamic workflow](/docs/code-with-ai/features/workflows) runs |
 
 #### Provider Commands
 

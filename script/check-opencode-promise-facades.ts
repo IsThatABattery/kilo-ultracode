@@ -153,6 +153,14 @@ const testAllow: Record<string, { count: number; reason: string }> = {
       "The nested Session/Storage reads inside syncForContinuation/fullSync run on that runtime, so a scoped layer would not " +
       "reproduce the Effect→Promise→AppRuntime boundary this test guards.",
   },
+  "kilocode/cli/run-auto-worktree.test.ts": {
+    count: 2,
+    reason:
+      "`kilo run` drives the in-process Server.Default(), whose handlers and global event stream run on the global AppRuntime. " +
+      "The test raises a workflow agent's permission ask inside a second (worktree) directory's instance on that same runtime, " +
+      "so the run's global watcher and the server's permission list observe it; a scoped-layer Permission.Service would be a " +
+      "separate instance the server never sees, so it cannot express the boundary under test.",
+  },
 }
 
 const owned = (file: string) => file.startsWith("kilocode/") || file.startsWith("kilo-sessions/")

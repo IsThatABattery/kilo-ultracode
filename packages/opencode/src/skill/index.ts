@@ -14,7 +14,7 @@ import { ConfigMarkdown } from "@/config/markdown"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Glob } from "@opencode-ai/core/util/glob"
 import { Discovery } from "./discovery"
-import { BUILTIN_SKILLS } from "../kilocode/skills/builtin" // kilocode_change
+import { BUILTIN_SKILLS, gate } from "../kilocode/skills/builtin" // kilocode_change
 import { primaryPaths } from "../kilocode/primary-worktree" // kilocode_change
 import { Git } from "@/git" // kilocode_change
 import { ClaudeMigration } from "@/kilocode/config/claude-migration" // kilocode_change
@@ -357,6 +357,7 @@ const layer = Layer.effect(
       Effect.fn("Skill.state")(function* () {
         const s: State = { skills: {}, dirs: new Set() }
         yield* loadSkills(s, yield* InstanceState.get(discovered), events)
+        gate(s.skills, yield* config.get(), flags) // kilocode_change - hide workflow-authoring when workflows are off
         return s
       }),
     )

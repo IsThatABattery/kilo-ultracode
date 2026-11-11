@@ -547,6 +547,10 @@ import type {
   TuiShowToastResponses,
   TuiSubmitPromptErrors,
   TuiSubmitPromptResponses,
+  UltracodeGetErrors,
+  UltracodeGetResponses,
+  UltracodeSetErrors,
+  UltracodeSetResponses,
   V2AgentListErrors,
   V2AgentListResponses,
   V2CommandListErrors,
@@ -681,6 +685,20 @@ import type {
   VcsGetResponses,
   VcsStatusErrors,
   VcsStatusResponses,
+  WorkflowAgentStopErrors,
+  WorkflowAgentStopResponses,
+  WorkflowGetErrors,
+  WorkflowGetResponses,
+  WorkflowListErrors,
+  WorkflowListResponses,
+  WorkflowPauseErrors,
+  WorkflowPauseResponses,
+  WorkflowResumeErrors,
+  WorkflowResumeResponses,
+  WorkflowSaveErrors,
+  WorkflowSaveResponses,
+  WorkflowStopErrors,
+  WorkflowStopResponses,
   WorktreeCreateErrors,
   WorktreeCreateInput,
   WorktreeCreateResponses,
@@ -4740,6 +4758,7 @@ export class Session2 extends HeyApiClient {
         activeFile?: string
         shell?: string
       }
+      ultracode?: boolean
       parts: Array<TextPartInput | FilePartInput | AgentPartInput | SubtaskPartInput>
     },
     options?: Options<never, ThrowOnError>,
@@ -4762,6 +4781,7 @@ export class Session2 extends HeyApiClient {
             { in: "body", key: "variant" },
             { in: "body", key: "snapshotInitialization" },
             { in: "body", key: "editorContext" },
+            { in: "body", key: "ultracode" },
             { in: "body", key: "parts" },
           ],
         },
@@ -5108,6 +5128,7 @@ export class Session2 extends HeyApiClient {
         activeFile?: string
         shell?: string
       }
+      ultracode?: boolean
       parts: Array<TextPartInput | FilePartInput | AgentPartInput | SubtaskPartInput>
     },
     options?: Options<never, ThrowOnError>,
@@ -5130,6 +5151,7 @@ export class Session2 extends HeyApiClient {
             { in: "body", key: "variant" },
             { in: "body", key: "snapshotInitialization" },
             { in: "body", key: "editorContext" },
+            { in: "body", key: "ultracode" },
             { in: "body", key: "parts" },
           ],
         },
@@ -5164,6 +5186,7 @@ export class Session2 extends HeyApiClient {
       command: string
       variant?: string
       snapshotInitialization?: "wait"
+      ultracode?: boolean
       parts?: Array<{
         id?: string
         type: "file"
@@ -5190,6 +5213,7 @@ export class Session2 extends HeyApiClient {
             { in: "body", key: "command" },
             { in: "body", key: "variant" },
             { in: "body", key: "snapshotInitialization" },
+            { in: "body", key: "ultracode" },
             { in: "body", key: "parts" },
           ],
         },
@@ -10689,6 +10713,314 @@ export class Memory extends HeyApiClient {
   }
 }
 
+export class Workflow extends HeyApiClient {
+  /**
+   * List workflow runs
+   *
+   * List dynamic workflow runs of the routed directory, optionally for one launching session.
+   */
+  public list<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      sessionID?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "query", key: "sessionID" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<WorkflowListResponses, WorkflowListErrors, ThrowOnError>({
+      url: "/kilocode/workflow",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Get workflow run
+   *
+   * Get one workflow run with its agents, narrator logs and result.
+   */
+  public get<ThrowOnError extends boolean = false>(
+    parameters: {
+      runID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "runID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<WorkflowGetResponses, WorkflowGetErrors, ThrowOnError>({
+      url: "/kilocode/workflow/{runID}",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Stop workflow run
+   *
+   * Stop a workflow run: running agents are cancelled and the script is terminated.
+   */
+  public stop<ThrowOnError extends boolean = false>(
+    parameters: {
+      runID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "runID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<WorkflowStopResponses, WorkflowStopErrors, ThrowOnError>({
+      url: "/kilocode/workflow/{runID}/stop",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Pause workflow run
+   *
+   * Pause a workflow run: running agents finish, but no new agents start until it is resumed.
+   */
+  public pause<ThrowOnError extends boolean = false>(
+    parameters: {
+      runID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "runID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<WorkflowPauseResponses, WorkflowPauseErrors, ThrowOnError>({
+      url: "/kilocode/workflow/{runID}/pause",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Resume workflow run
+   *
+   * Resume a paused workflow run.
+   */
+  public resume<ThrowOnError extends boolean = false>(
+    parameters: {
+      runID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "runID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<WorkflowResumeResponses, WorkflowResumeErrors, ThrowOnError>({
+      url: "/kilocode/workflow/{runID}/resume",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Stop workflow agent
+   *
+   * Stop one running or queued agent of a workflow run; the script receives null for it.
+   */
+  public agentStop<ThrowOnError extends boolean = false>(
+    parameters: {
+      runID: string
+      agentID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "runID" },
+            { in: "path", key: "agentID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<WorkflowAgentStopResponses, WorkflowAgentStopErrors, ThrowOnError>({
+      url: "/kilocode/workflow/{runID}/agent/{agentID}/stop",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Save workflow
+   *
+   * Save a run's script as a saved workflow in the project's .kilo/workflows/ or the global workflows directory.
+   */
+  public save<ThrowOnError extends boolean = false>(
+    parameters: {
+      runID: string
+      directory?: string
+      workspace?: string
+      scope: "project" | "global"
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "runID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "scope" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<WorkflowSaveResponses, WorkflowSaveErrors, ThrowOnError>({
+      url: "/kilocode/workflow/{runID}/save",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+}
+
+export class Ultracode extends HeyApiClient {
+  /**
+   * Get ultracode state
+   *
+   * Get whether ultracode is on for a session, whether it is available, and the size guideline.
+   */
+  public get<ThrowOnError extends boolean = false>(
+    parameters: {
+      directory?: string
+      workspace?: string
+      sessionID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "query", key: "sessionID" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<UltracodeGetResponses, UltracodeGetErrors, ThrowOnError>({
+      url: "/kilocode/ultracode",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Set ultracode
+   *
+   * Turn ultracode on or off for a session.
+   */
+  public set<ThrowOnError extends boolean = false>(
+    parameters: {
+      directory?: string
+      workspace?: string
+      sessionID: string
+      enabled: boolean
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "sessionID" },
+            { in: "body", key: "enabled" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<UltracodeSetResponses, UltracodeSetErrors, ThrowOnError>({
+      url: "/kilocode/ultracode",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+}
+
 export class Health extends HeyApiClient {
   /**
    * Check server health
@@ -12988,6 +13320,16 @@ export class KiloClient extends HeyApiClient {
   private _memory?: Memory
   get memory(): Memory {
     return (this._memory ??= new Memory({ client: this.client }))
+  }
+
+  private _workflow?: Workflow
+  get workflow(): Workflow {
+    return (this._workflow ??= new Workflow({ client: this.client }))
+  }
+
+  private _ultracode?: Ultracode
+  get ultracode(): Ultracode {
+    return (this._ultracode ??= new Ultracode({ client: this.client }))
   }
 
   private _v2?: V2

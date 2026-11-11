@@ -173,6 +173,82 @@ export const kiloScenarios: Scenario[] = [
       headers: ctx.headers(),
     }))
     .json(200, (body) => check(body === true, "session process stop should return true")),
+  http.protected
+    .get("/kilocode/workflow", "workflow.list")
+    .at((ctx) => ({ path: "/kilocode/workflow?sessionID=ses_httpapi_missing", headers: ctx.headers() }))
+    .json(200, (body) => {
+      array(body)
+      check(body.length === 0, "a session without workflow runs should list none")
+    }),
+  http.protected
+    .get("/kilocode/workflow/{runID}", "workflow.get")
+    .at((ctx) => ({
+      path: route("/kilocode/workflow/{runID}", { runID: "wf_httpapi0-000" }),
+      headers: ctx.headers(),
+    }))
+    .status(404),
+  http.protected
+    .post("/kilocode/workflow/{runID}/stop", "workflow.stop")
+    .at((ctx) => ({
+      path: route("/kilocode/workflow/{runID}/stop", { runID: "wf_httpapi0-000" }),
+      headers: ctx.headers(),
+    }))
+    .status(404),
+  http.protected
+    .post("/kilocode/workflow/{runID}/pause", "workflow.pause")
+    .at((ctx) => ({
+      path: route("/kilocode/workflow/{runID}/pause", { runID: "wf_httpapi0-000" }),
+      headers: ctx.headers(),
+    }))
+    .status(404),
+  http.protected
+    .post("/kilocode/workflow/{runID}/resume", "workflow.resume")
+    .at((ctx) => ({
+      path: route("/kilocode/workflow/{runID}/resume", { runID: "wf_httpapi0-000" }),
+      headers: ctx.headers(),
+    }))
+    .status(404),
+  http.protected
+    .post("/kilocode/workflow/{runID}/agent/{agentID}/stop", "workflow.agentStop")
+    .at((ctx) => ({
+      path: route("/kilocode/workflow/{runID}/agent/{agentID}/stop", { runID: "wf_httpapi0-000", agentID: "a0" }),
+      headers: ctx.headers(),
+    }))
+    .status(404),
+  http.protected
+    .post("/kilocode/workflow/{runID}/save", "workflow.save")
+    .at((ctx) => ({
+      path: route("/kilocode/workflow/{runID}/save", { runID: "wf_httpapi0-000" }),
+      headers: ctx.headers(),
+      body: { scope: "project" },
+    }))
+    .status(404),
+  http.protected
+    .get("/kilocode/ultracode", "ultracode.get")
+    .seeded((ctx) => ctx.session({ title: "Ultracode state" }))
+    .at((ctx) => ({
+      path: `/kilocode/ultracode?sessionID=${ctx.state.id}`,
+      headers: ctx.headers(),
+    }))
+    .json(200, (body) => {
+      object(body)
+      check(body.enabled === false, "ultracode should start off")
+      check(body.available === true, "workflows should be available by default")
+      check(body.size === "medium", "the default size guideline should be medium")
+    }),
+  http.protected
+    .post("/kilocode/ultracode", "ultracode.set")
+    .mutating()
+    .seeded((ctx) => ctx.session({ title: "Ultracode toggle" }))
+    .at((ctx) => ({
+      path: "/kilocode/ultracode",
+      headers: ctx.headers(),
+      body: { sessionID: ctx.state.id, enabled: true },
+    }))
+    .json(200, (body) => {
+      object(body)
+      check(body.enabled === true, "ultracode should report the new state")
+    }),
   http.protected.get("/config/warnings", "config.warnings").json(200, array),
   http.protected.get("/config/effective", "config.effective").json(200, object),
   http.protected.get("/config/model-state", "config.modelState").json(200, object),

@@ -122,6 +122,7 @@ Permissions are configured under the `permission` key in `kilo.jsonc`. The follo
 | `glob` | File pattern matching / searching by name |
 | `grep` | Searching file contents by regex |
 | `task` | Launching sub-agents |
+| `workflow` | Starting [dynamic workflows](/docs/code-with-ai/features/workflows), matched by workflow name (defaults to `ask`) |
 | `skill` | Loading specialized skills |
 | `lsp` | Language server protocol operations |
 | `todoread` / `todowrite` | Reading and updating the todo list |

@@ -11,6 +11,8 @@ export const DEFAULT_RULES: PermissionRuleItem[] = [
   { permission: "bash", pattern: "*", action: "ask" },
   { permission: "browser_open", pattern: "*", action: "ask" },
   { permission: "doom_loop", pattern: "*", action: "ask" },
+  // A workflow launch fans out many agents, so the CLI asks before it by default.
+  { permission: "workflow", pattern: "*", action: "ask" },
 ]
 
 function matchTool(tool: string, pattern: string): boolean {

@@ -17,7 +17,7 @@ import { StoryProviders, mockSessionValue } from "./StoryProviders"
 import { SessionContext } from "../context/session"
 import { PromptInput } from "../components/chat/PromptInput"
 import { SandboxTooltipContent } from "../components/shared/SandboxButton"
-import { contextDrafts } from "../utils/draft-store"
+import { contextDrafts, drafts } from "../utils/draft-store"
 import { Button } from "@kilocode/kilo-ui/button"
 import { Icon } from "@kilocode/kilo-ui/icon"
 import { Tooltip } from "@kilocode/kilo-ui/tooltip"
@@ -28,7 +28,7 @@ const agents = [
   { name: "architect", description: "Plan and design before implementation", mode: "primary" as const },
 ]
 
-const PromptProviders: ParentComponent<{ variants?: boolean; training?: boolean }> = (props) => {
+const PromptProviders: ParentComponent<{ variants?: boolean; training?: boolean; workflows?: boolean }> = (props) => {
   const base = mockSessionValue({ status: "idle" })
   const session = {
     ...base,
@@ -36,10 +36,19 @@ const PromptProviders: ParentComponent<{ variants?: boolean; training?: boolean 
     selectedAgent: () => "code",
     variantList: () => (props.variants ? ["low", "medium", "high"] : []),
     currentVariant: () => (props.variants ? ("medium" as string | undefined) : undefined),
+    // Records each send on the body so interaction tests can read what the prompt submitted.
+    sendMessage: (...args: unknown[]) => {
+      document.body.dataset.sent = JSON.stringify(args)
+      return true
+    },
   }
 
   return (
-    <StoryProviders noPadding training={props.training}>
+    <StoryProviders
+      noPadding
+      training={props.training}
+      {...(props.workflows ? { config: {}, features: { workflows: true } } : {})}
+    >
       {/* overflow:hidden prevents margin-collapse so top/bottom borders are captured in screenshots */}
       <div style={{ overflow: "hidden" }}>
         <SessionContext.Provider value={session as any}>{props.children}</SessionContext.Provider>
@@ -230,4 +239,24 @@ export const WithManyCodeContexts420: Story = {
 export const WithLargeCodeContext420: Story = {
   name: "With large code context — 420px",
   render: () => <CodeContextPrompt box="story-code-context-large" contexts={[largeContext]} />,
+}
+
+// ---------------------------------------------------------------------------
+// Stories — the ultracode keyword (backend with dynamic workflows)
+// ---------------------------------------------------------------------------
+
+const ULTRACODE_BOX = "story-ultracode"
+
+function UltracodePrompt() {
+  drafts.set(`${ULTRACODE_BOX}:session:story-session-001`, "ultracode: audit the auth module and fix what you find")
+  return (
+    <PromptProviders workflows>
+      <PromptInput boxId={ULTRACODE_BOX} />
+    </PromptProviders>
+  )
+}
+
+export const UltracodeKeyword420: Story = {
+  name: "Ultracode keyword — 420px",
+  render: () => <UltracodePrompt />,
 }

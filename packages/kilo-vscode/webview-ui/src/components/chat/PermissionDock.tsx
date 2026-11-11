@@ -22,7 +22,9 @@ import {
   describePatterns,
   describeRule,
   displaySkillCommand,
+  savableRules,
   savedRuleStates,
+  workflowPhases,
   type RuleDecision,
 } from "./permission-dock-utils"
 import { PermissionCommand } from "./PermissionCommand"
@@ -56,8 +58,9 @@ export const PermissionDock: Component<{
   const skillShell = () => props.request.args?.skillShell === true
   const skillShellCommands = () =>
     skillShell() && props.request.toolName === "bash" ? (props.request.args?.commands ?? []) : []
-  // Bash sends fine-grained rules via metadata.rules; other tools use the always array.
-  const rules = () => props.request.args?.rules ?? props.request.always ?? []
+  // Bash sends fine-grained rules via metadata.rules; other tools use the always array. An ask with no
+  // always rules, or one that disables them, shows no auto-approve section.
+  const rules = () => savableRules(props.request)
   // Rules like "git *" or "git log *" — strip the trailing wildcard for display.
   // A bare "*" (global wildcard) becomes empty so only the tool name shows.
   const label = (rule: string) => (rule === "*" ? "" : rule.replace(/ \*$/, ""))
@@ -70,6 +73,9 @@ export const PermissionDock: Component<{
   const text = (rule: string) => (command() ? label(rule) : describeRule(props.request.toolName, rule, language.t))
   const external = () => props.request.toolName === "external_directory"
   const sandboxEscalation = () => props.request.toolName === "sandbox_escalation"
+  // A workflow launch shows its planned phases and a token caution, like Claude Code's approval card.
+  const workflow = () => props.request.toolName === "workflow"
+  const phases = createMemo(() => (workflow() ? workflowPhases(props.request.args ?? {}) : []))
   const cmdDescription = () => {
     const val = props.request.args?.description
     return typeof val === "string" && val.length > 0 ? val : undefined
@@ -393,6 +399,27 @@ export const PermissionDock: Component<{
                       </div>
                     )
                   })()}
+
+                  <Show when={phases().length > 0}>
+                    <div data-slot="permission-patterns">
+                      <span data-slot="permission-patterns-title">{language.t("ui.permission.workflow.phases")}</span>
+                      <ol data-slot="permission-phases">
+                        <For each={phases()}>
+                          {(phase) => (
+                            <li data-slot="permission-phase">
+                              {phase.title}
+                              <Show when={phase.detail}>
+                                {(detail) => <span data-slot="permission-phase-detail"> — {detail()}</span>}
+                              </Show>
+                            </li>
+                          )}
+                        </For>
+                      </ol>
+                    </div>
+                  </Show>
+                  <Show when={workflow()}>
+                    <div data-slot="permission-caution">{language.t("ui.permission.workflow.caution")}</div>
+                  </Show>
                 </>
               }
             >

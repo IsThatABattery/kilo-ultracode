@@ -13,6 +13,8 @@ import * as Reserved from "@/kilocode/command/reserved" // kilocode_change
 import PROMPT_INITIALIZE from "./template/initialize.txt"
 import { LegacyEvent } from "@opencode-ai/schema/legacy-event"
 import { SessionResume } from "@/kilocode/session-resume" // kilocode_change
+import { RuntimeFlags } from "@/effect/runtime-flags" // kilocode_change
+import { WorkflowSaved } from "@/kilocode/workflow/saved" // kilocode_change
 
 type State = {
   commands: Record<string, Info>
@@ -99,6 +101,7 @@ const layer = Layer.effect(
     const config = yield* Config.Service
     const mcp = yield* MCP.Service
     const skill = yield* Skill.Service
+    const flags = yield* RuntimeFlags.Service // kilocode_change
 
     const init = Effect.fn("Command.state")(function* (ctx: InstanceContext) {
       const cfg = yield* config.get()
@@ -176,6 +179,7 @@ const layer = Layer.effect(
       }
 
       // kilocode_change start - apply deferred overrides to their registered source
+      yield* WorkflowSaved.register(commands, { config, flags, directory: ctx.directory, worktree: ctx.worktree }) // saved JS workflows
       for (const item of overrides) {
         const skillTarget = skillName(item.name)
         if (skillTarget) {
@@ -208,7 +212,7 @@ const layer = Layer.effect(
     const state = yield* InstanceState.make<State>((ctx) => init(ctx))
 
     const get = Effect.fn("Command.get")(function* (name: string) {
-      const s = yield* InstanceState.get(state)
+      const s = yield* WorkflowSaved.current(state) // kilocode_change - rebuilt after a workflow is saved
       const exact = s.commands[name] // kilocode_change
       if (exact) return exact // kilocode_change
 
@@ -234,7 +238,7 @@ const layer = Layer.effect(
 
     // kilocode_change start
     const list = Effect.fn("Command.list")(function* () {
-      const s = yield* InstanceState.get(state)
+      const s = yield* WorkflowSaved.current(state)
       const result = Object.values(s.commands)
       const names = new Set(result.map((item) => item.name))
       for (const item of yield* skill.all()) {
@@ -249,6 +253,12 @@ const layer = Layer.effect(
   }),
 )
 
-export const node = LayerNode.make({ service: Service, layer: layer, deps: [Config.node, MCP.node, Skill.node] })
+// kilocode_change start - saved workflow commands honor the workflows kill switch
+export const node = LayerNode.make({
+  service: Service,
+  layer: layer,
+  deps: [Config.node, MCP.node, Skill.node, RuntimeFlags.node],
+})
+// kilocode_change end
 
 export * as Command from "."

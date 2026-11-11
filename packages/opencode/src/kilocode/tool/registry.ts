@@ -17,6 +17,7 @@ import { NotifyUserTool } from "./notify-user"
 import { OpenPlanTool } from "./open-plan"
 import { ScheduleWakeupTool } from "./schedule-wakeup"
 import { SendFileTool } from "./send-file"
+import { WorkflowTool } from "./workflow"
 import * as Tool from "../../tool/tool"
 import { Flag } from "@opencode-ai/core/flag/flag"
 import { Effect } from "effect"
@@ -29,6 +30,7 @@ import * as Log from "@opencode-ai/core/util/log"
 import type { Config } from "@/config/config"
 import type { RuntimeFlags } from "@/effect/runtime-flags"
 import { BoardEnabled } from "@/kilocode/board/enabled"
+import { KiloWorkflowEnabled } from "@/kilocode/workflow/enabled"
 import { Agent } from "@/agent/agent"
 import * as Truncate from "@/tool/truncate"
 import { InstanceState } from "@/effect/instance-state"
@@ -119,6 +121,7 @@ export namespace KiloToolRegistry {
       const cronCreate = yield* CronCreateTool
       const cronList = yield* CronListTool
       const cronDelete = yield* CronDeleteTool
+      const workflow = yield* WorkflowTool
       const board = yield* Effect.all({
         boardRead: BoardReadTool,
         boardPost: BoardPostTool,
@@ -145,6 +148,7 @@ export namespace KiloToolRegistry {
           cronCreate,
           cronList,
           cronDelete,
+          workflow,
           ...board,
         }
       const tools = yield* Effect.all({
@@ -171,6 +175,7 @@ export namespace KiloToolRegistry {
         cronCreate,
         cronList,
         cronDelete,
+        workflow,
         ...board,
         ...tools,
       }
@@ -199,6 +204,7 @@ export namespace KiloToolRegistry {
       cronCreate?: Tool.Info
       cronList?: Tool.Info
       cronDelete?: Tool.Info
+      workflow?: Tool.Info
       boardRead?: Tool.Info
       goalReport?: Tool.Info
       goal?: Tool.Info
@@ -230,6 +236,7 @@ export namespace KiloToolRegistry {
       const cronCreate = tools.cronCreate ? yield* Tool.init(tools.cronCreate) : undefined
       const cronList = tools.cronList ? yield* Tool.init(tools.cronList) : undefined
       const cronDelete = tools.cronDelete ? yield* Tool.init(tools.cronDelete) : undefined
+      const workflow = tools.workflow ? yield* Tool.init(tools.workflow) : undefined
       const report = tools.goalReport ? { goalReport: yield* Tool.init(tools.goalReport) } : {}
       const goal = tools.goal ? { goal: yield* Tool.init(tools.goal) } : {}
       const board =
@@ -260,6 +267,7 @@ export namespace KiloToolRegistry {
         cronCreate,
         cronList,
         cronDelete,
+        workflow,
         notify: base.notify,
         send: base.send,
       }
@@ -331,6 +339,7 @@ export namespace KiloToolRegistry {
       cronCreate?: Tool.Def
       cronList?: Tool.Def
       cronDelete?: Tool.Def
+      workflow?: Tool.Def
       boardRead?: Tool.Def
       goalReport?: Tool.Def
       goal?: Tool.Def
@@ -343,10 +352,13 @@ export namespace KiloToolRegistry {
       experimental?: {
         image_generation?: boolean
         native_notebook_tools?: boolean
+        workflows?: boolean
+        ultracode?: boolean
+        workflow_size?: "small" | "medium" | "large" | "unrestricted"
       }
       shared_agent_board?: boolean
     },
-    flags: Pick<RuntimeFlags.Info, "experimentalSharedAgentBoard">,
+    flags: Pick<RuntimeFlags.Info, "experimentalSharedAgentBoard"> & { disableWorkflows?: boolean },
   ): Tool.Def[] {
     const enabled = BoardEnabled.on(cfg, flags)
     return [
@@ -365,6 +377,9 @@ export namespace KiloToolRegistry {
       ...((Flag.KILO_CLIENT === "cli" || Flag.KILO_CLIENT === "vscode") && tools.cronCreate ? [tools.cronCreate] : []),
       ...((Flag.KILO_CLIENT === "cli" || Flag.KILO_CLIENT === "vscode") && tools.cronList ? [tools.cronList] : []),
       ...((Flag.KILO_CLIENT === "cli" || Flag.KILO_CLIENT === "vscode") && tools.cronDelete ? [tools.cronDelete] : []),
+      ...(KiloWorkflowEnabled.enabled(cfg, { disableWorkflows: flags.disableWorkflows === true }) && tools.workflow
+        ? [tools.workflow]
+        : []),
       tools.managerModels,
       ...(Flag.KILO_CLIENT === "vscode" ? [tools.manager] : []),
       ...(Flag.KILO_CLIENT === "vscode" && tools.browser ? [tools.browser] : []),

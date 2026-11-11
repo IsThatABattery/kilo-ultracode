@@ -42,6 +42,7 @@ import { collector } from "../kilocode/notices" // kilocode_change
 import { errorMessage } from "../util/error" // kilocode_change
 import { usePermission } from "./permission"
 import { GoalSync } from "@/kilocode/cli/cmd/tui/goal-sync" // kilocode_change
+import { KiloInstance } from "../kilocode/instance" // kilocode_change
 
 const emptyConsoleState: ConsoleState = {
   consoleManagedProviders: [],
@@ -319,6 +320,8 @@ export const {
       switch (event.type) {
         case "server.instance.disposed":
           // kilocode_change start
+          // other directories of the project (workflow agent worktrees) do not reset this one
+          if (!KiloInstance.own(event.properties.directory, project.instance.directory())) break
           deleted.clear()
           terminal.clear()
           setStore("background_process", {})

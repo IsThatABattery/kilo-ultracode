@@ -12,6 +12,7 @@ import SidebarIndexing from "@/kilocode/plugins/sidebar-indexing"
 import SidebarPr from "@/kilocode/plugins/sidebar-pr"
 import SidebarUsage from "@/kilocode/plugins/sidebar-usage"
 import Sandbox from "@/kilocode/plugins/sandbox"
+import Workflows from "@/kilocode/plugins/workflows"
 import Remote from "@/kilocode/plugins/remote"
 import Reload from "@/kilocode/plugins/reload"
 import SessionSwitcher from "@/kilocode/plugins/session-switcher"
@@ -32,6 +33,7 @@ const plugins = [
   SidebarPr,
   SidebarUsage,
   Sandbox,
+  Workflows,
   Remote,
   Reload,
 ] satisfies BuiltinTuiPlugin[]

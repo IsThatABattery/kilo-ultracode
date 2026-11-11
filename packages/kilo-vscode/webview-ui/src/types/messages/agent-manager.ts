@@ -14,6 +14,7 @@ export interface BaseUpdateRequest {
   sessionId?: string
   model?: { providerID: string; modelID: string }
   variant?: string
+  ultracode?: boolean
   agent?: string
 }
 

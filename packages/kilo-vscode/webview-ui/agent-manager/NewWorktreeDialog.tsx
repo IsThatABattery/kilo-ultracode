@@ -247,6 +247,21 @@ export const NewWorktreeDialog: Component<{
   const [sandboxReason, setSandboxReason] = createSignal<string | undefined>()
   const [sandboxRevision, setSandboxRevision] = createSignal(-1)
   const sandboxRequestID = crypto.randomUUID()
+  // Undefined until the user flips the switch; the backend then applies the config default itself.
+  const [ultracode, setUltracode] = createSignal<boolean>()
+  const ultracodeSwitch = () =>
+    features().workflows
+      ? {
+          checked: ultracode() ?? config().experimental?.ultracode ?? false,
+          onChange: setUltracode,
+          label: t("prompt.ultracode.label"),
+          description: t("prompt.ultracode.description"),
+        }
+      : undefined
+  // Compare mode hides effort, but the ultracode switch applies to every version.
+  const effort = () => (compareMode() ? [] : variants())
+  const level = () => (compareMode() ? undefined : effectiveVariant())
+  const reasoning = () => !compareMode() || !!ultracodeSwitch()
   const sandboxVisible = () => features().sandboxControls && globalConfig().sandbox?.enabled === true
   const speech = useSpeechToText(vscode, server, { t })
   const speechModels = useSpeechToTextModels()
@@ -554,6 +569,7 @@ export const NewWorktreeDialog: Component<{
       modelID: sel?.modelID,
       agent: selectedAgent,
       variant: isCompare ? undefined : (effectiveVariant() ?? (variants().length > 0 ? DEFAULT_VARIANT : undefined)),
+      ultracode: features().workflows ? ultracode() : undefined,
       baseBranch: effectiveBaseBranch(),
       branchName: customBranch,
       modelAllocations: allocations,
@@ -1094,10 +1110,10 @@ export const NewWorktreeDialog: Component<{
                     </Show>
                   }
                   variant={
-                    <Show when={!compareMode()}>
+                    <Show when={reasoning()}>
                       <ThinkingSelectorBase
-                        variants={variants()}
-                        value={effectiveVariant()}
+                        variants={effort()}
+                        value={level()}
                         onSelect={selectVariant}
                         onClear={() => selectVariant(DEFAULT_VARIANT)}
                         allowClear
@@ -1107,6 +1123,7 @@ export const NewWorktreeDialog: Component<{
                         portal={false}
                         deferDismiss
                         cycleHint={settings()["chat.shiftTabCyclesVariant"] !== false}
+                        ultracode={ultracodeSwitch()}
                       />
                     </Show>
                   }

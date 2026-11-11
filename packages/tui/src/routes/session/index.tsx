@@ -65,6 +65,7 @@ import stripAnsi from "strip-ansi"
 import { usePromptRef } from "../../context/prompt"
 import { ApprovalBadge, describeApproval, stateMetadata } from "../../kilocode/tool-approval" // kilocode_change
 import { BoardTool } from "../../kilocode/board-tool" // kilocode_change
+import { WorkflowTool } from "../../kilocode/workflow-tool" // kilocode_change
 import { KiloSteer } from "../../kilocode/steer" // kilocode_change
 import { useEpilogue } from "../../context/epilogue"
 import { normalizePath } from "../../util/path"
@@ -1967,6 +1968,9 @@ function ToolPart(props: { last: boolean; part: ToolPart; message: AssistantMess
         <Match when={display() === "background_process"}>
           <BackgroundProcess {...toolprops} />
         </Match>
+        <Match when={display() === "workflow"}>
+          <WorkflowTool part={props.part} block={BlockTool} />
+        </Match>
         <Match when={display() === "semantic_search"}>
           <SemanticSearch {...toolprops} />
         </Match>
@@ -3032,6 +3036,7 @@ const toolDisplays = new Set([
   "background_process",
   "semantic_search",
   "suggest",
+  "workflow",
   // kilocode_change end
 ])
 

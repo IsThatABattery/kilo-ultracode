@@ -13,6 +13,7 @@ import { type ReviewMessageData } from "../../shared/review-comments"
 import { feedbackMetadata, type BrowserFeedbackData } from "../../shared/browser-feedback"
 import { mergeInjected } from "../../shared/injected-prompt"
 import { completesWithoutStatus } from "../command-completion"
+import { keywordMetadata, ultracodeField, type PromptOptions } from "../prompt-options"
 
 const TIMEOUT = 30_000
 
@@ -133,6 +134,7 @@ export async function handleImportAndSend(
   commandArgs?: string,
   browserFeedback?: BrowserFeedbackData,
   injectedTitle?: string,
+  opts: PromptOptions = {},
 ): Promise<void> {
   if (!ctx.client) {
     ctx.postMessage({
@@ -212,6 +214,7 @@ export async function handleImportAndSend(
             model: providerID && modelID ? `${providerID}/${modelID}` : undefined,
             agent,
             variant,
+            ...ultracodeField(opts.ultracode),
             parts,
           },
           { throwOnError: true },
@@ -235,7 +238,10 @@ export async function handleImportAndSend(
       parts.push({
         type: "text",
         text,
-        metadata: mergeInjected(feedbackMetadata(review, browserFeedback), injectedTitle),
+        metadata: keywordMetadata(
+          mergeInjected(feedbackMetadata(review, browserFeedback), injectedTitle),
+          opts.noUltracode,
+        ),
       })
 
       const editorContext = await ctx.gatherEditorContext()
@@ -248,6 +254,7 @@ export async function handleImportAndSend(
           model: providerID && modelID ? { providerID, modelID } : undefined,
           agent,
           variant,
+          ...ultracodeField(opts.ultracode),
           editorContext,
         },
         { throwOnError: true },

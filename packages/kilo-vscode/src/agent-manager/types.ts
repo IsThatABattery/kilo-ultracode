@@ -329,6 +329,7 @@ interface SendInitialMessage {
   modelID?: string
   agent?: string
   variant?: string
+  ultracode?: boolean
   files?: Array<{ mime: string; url: string }>
   browserFeedback?: BrowserFeedbackData
 }
@@ -824,6 +825,7 @@ interface CreateMultiVersionIn {
   modelID?: string
   agent?: string
   variant?: string
+  ultracode?: boolean
   files?: Array<{ mime: string; url: string }>
   baseBranch?: string
   branchName?: string

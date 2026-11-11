@@ -77,6 +77,7 @@ import {
   removeSessionToolPart,
   removeSessionToolPartsForMessage,
   revertPromptState,
+  sendFields,
   upsertSessionToolPart,
   type MessagePageState,
 } from "./session-utils"
@@ -94,6 +95,7 @@ import { handleWakeupMessage, wakeups } from "./session-wakeup"
 import { state as todoState } from "./todo-revert"
 import { preserveVariant, sessionVariantKeys, transferVariants, variantKey } from "./session-variant-store"
 import { createSessionVariants } from "./session-variants"
+import { createSessionUltracode } from "./session-ultracode"
 import { KILO_AUTO, KILO_PROVIDER_ID, parseModelString } from "../../../src/shared/provider-model"
 import { type ReviewMessageData } from "../../../src/shared/review-comments"
 import { REVERT_ERROR_CODE } from "../../../src/shared/revert-error"
@@ -143,7 +145,7 @@ export const SessionProvider: ParentComponent = (props) => {
   const vscode = useVSCode()
   const server = useServer()
   const provider = useProvider()
-  const { config } = useConfig()
+  const { config, features } = useConfig()
   const language = useLanguage()
   // The Agent Manager nests a second provider for the subagent inspector; the outer one owns the toasts.
   const nested = useContext(SessionContext) !== undefined
@@ -554,6 +556,15 @@ export const SessionProvider: ParentComponent = (props) => {
     remember: rememberEffort,
   })
   const { carry: carryVariant, list: variantList, agent: variantForAgent, current: currentVariant } = variants
+  const ultracode = createSessionUltracode({
+    session: () => currentSessionID() ?? COMPOSER,
+    stored: (id) => store.sessions[id]?.ultracode,
+    fallback: () => config().experimental?.ultracode,
+    available: () => features().workflows,
+    draft: isDraftScope,
+    post: vscode.postMessage,
+    listen: vscode.onMessage,
+  })
   const selectVariant = variants.select
   const models = createModelSelector({
     current: () => currentSessionID() ?? COMPOSER,
@@ -614,6 +625,7 @@ export const SessionProvider: ParentComponent = (props) => {
     return {
       model: model ? { providerID: model.providerID, modelID: model.modelID } : undefined,
       variant: variants.request(sessionID),
+      ...ultracode.body(sessionID),
       agent: resolvePromptAgent({
         sessionID,
         selections: store.agentSelections,
@@ -624,22 +636,11 @@ export const SessionProvider: ParentComponent = (props) => {
 
   function hideErrors(sid?: string) {
     const ids = errorIDs(store.messages[sid ?? ""] ?? [])
-    if (ids.length === 0) return
-    setHiddenErrors((prev) => {
-      const next = new Set(prev)
-      for (const id of ids) next.add(id)
-      return next
-    })
+    if (ids.length > 0) setHiddenErrors((prev) => new Set([...prev, ...ids]))
   }
 
   function clearHiddenErrors(ids: string[]) {
-    if (ids.length === 0) return
-    setHiddenErrors((prev) => {
-      const next = new Set(prev)
-      for (const id of ids) next.delete(id)
-      if (next.size === prev.size) return prev
-      return next
-    })
+    if (ids.length > 0) setHiddenErrors((prev) => dropSet(prev, ids))
   }
 
   function modelForAgent(agentName: string): ModelSelection | null {
@@ -1156,6 +1157,7 @@ export const SessionProvider: ParentComponent = (props) => {
           setStore("variantSelections", key, value)
           vscode.postMessage({ type: "persistVariant", key, value })
         }
+        ultracode.transfer(draftID, session.id)
         if (pendingAgent) setStore("agentSelections", session.id, pendingAgent)
         // Move the draft's whole per-agent pick map, so each agent keeps its model.
         if (pendingPicks) setStore("sessionOverrides", session.id, pendingPicks)
@@ -1923,6 +1925,7 @@ export const SessionProvider: ParentComponent = (props) => {
           for (const key of sessionVariantKeys(s.variantSelections, sessionID)) delete s.variantSelections[key]
         }),
       )
+      ultracode.forget(sessionID)
       // prettier-ignore
       setPages(produce((map) => { delete map[sessionID] }))
       // Clean up pending questions/errors for the deleted session
@@ -2105,6 +2108,7 @@ export const SessionProvider: ParentComponent = (props) => {
     for (const [key, value] of Object.entries(transferVariants(store.variantSelections, COMPOSER, draft))) {
       setStore("variantSelections", key, value)
     }
+    ultracode.transfer(COMPOSER, draft)
     memory.forget(COMPOSER)
   }
 
@@ -2213,6 +2217,7 @@ export const SessionProvider: ParentComponent = (props) => {
     origin?: string | null,
     browserFeedback?: BrowserFeedbackData,
     injectedTitle?: string,
+    noUltracode?: boolean,
   ): boolean {
     if (!server.isConnected()) {
       console.warn("[Kilo New] Cannot send message: not connected")
@@ -2238,10 +2243,7 @@ export const SessionProvider: ParentComponent = (props) => {
         cloudSessionId: preview,
         text,
         messageID,
-        providerID: settings.model?.providerID,
-        modelID: settings.model?.modelID,
-        agent: settings.agent,
-        variant: settings.variant,
+        ...sendFields(settings, noUltracode),
         files,
         review,
         browserFeedback,
@@ -2268,10 +2270,7 @@ export const SessionProvider: ParentComponent = (props) => {
       messageID,
       sessionID: sid,
       draftID: effectiveDraftID,
-      providerID: settings.model?.providerID,
-      modelID: settings.model?.modelID,
-      agent: settings.agent,
-      variant: settings.variant,
+      ...sendFields(settings, noUltracode),
       files,
       review,
       browserFeedback,
@@ -3011,14 +3010,13 @@ export const SessionProvider: ParentComponent = (props) => {
     selectAgent,
     getSessionAgent: (sessionID: string) => agentForScope(sessionID),
     setSessionModel: models.session,
-    setSessionAgent: (sessionID: string, name: string) => {
-      setStore("agentSelections", sessionID, name)
-    },
+    setSessionAgent: (sessionID: string, name: string) => setStore("agentSelections", sessionID, name),
     setSessionVariant: (sessionID: string, providerID: string, modelID: string, value: string, agent?: string) => {
       const name = agent ?? agentForScope(sessionID)
       const key = variantKey({ providerID, modelID }, name, sessionID)
       setStore("variantSelections", key, value)
     },
+    ultracode,
     allMessages,
     allParts,
     allStatusMap,

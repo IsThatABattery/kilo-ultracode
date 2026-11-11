@@ -109,7 +109,7 @@ export type PasteRange = {
 
 export type PromptSegment = {
   text: string
-  kind: "plain" | "mention" | "paste"
+  kind: "plain" | "mention" | "paste" | "ultracode"
   /** Paste id for a collapsed block, so a click can find its backing text. */
   paste?: number
 }

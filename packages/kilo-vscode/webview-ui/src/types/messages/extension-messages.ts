@@ -90,6 +90,7 @@ import type {
 } from "./migration"
 import type { MemoryEventMessage, MemoryLoadedMessage, MemoryOperationResultMessage } from "./memory"
 import type { SessionBoardLoadedMessage } from "./board"
+import type { UltracodeSavedMessage, WorkflowRunLoadedMessage, WorkflowRunUpdatedMessage } from "./workflow"
 
 // ============================================
 // Messages FROM extension TO webview
@@ -1382,6 +1383,7 @@ export interface AgentManagerSendInitialMessage {
   modelID?: string
   agent?: string
   variant?: string
+  ultracode?: boolean
   files?: Array<{ mime: string; url: string }>
   browserFeedback?: BrowserFeedbackData
 }
@@ -2027,4 +2029,7 @@ export type ExtensionMessage =
   | MemoryEventMessage
   | MemoryOperationResultMessage
   | BackgroundJobsLoadedMessage
+  | WorkflowRunUpdatedMessage
+  | WorkflowRunLoadedMessage
+  | UltracodeSavedMessage
   | SessionBoardLoadedMessage

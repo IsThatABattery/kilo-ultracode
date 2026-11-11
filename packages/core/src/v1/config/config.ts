@@ -352,6 +352,25 @@ export const Info = Schema.Struct({
       openTelemetry: Schema.Boolean.pipe(Schema.optional, Schema.withDecodingDefault(Effect.succeed(true))).annotate({
         description: "Enable telemetry. Set to false to opt-out.",
       }),
+      workflows: Schema.optional(Schema.Boolean).annotate({
+        description:
+          "Enable dynamic workflows: the workflow tool, the workflow-authoring skill, saved workflow commands and ultracode (default: true)",
+      }),
+      ultracode: Schema.optional(Schema.Boolean).annotate({
+        description:
+          "Start every session with ultracode on, so the agent plans a multi-agent workflow for each substantive task (default: false)",
+      }),
+      ultracode_keyword: Schema.optional(Schema.Boolean).annotate({
+        description:
+          "Let the word ultracode in a typed message opt that message in to a multi-agent workflow (default: true)",
+      }),
+      workflow_size: Schema.optional(Schema.Literals(["small", "medium", "large", "unrestricted"])).annotate({
+        description:
+          "Advisory size guideline for dynamic workflows: small (<5 agents), medium (<10), large (<50) or unrestricted (default: medium)",
+      }),
+      claude_workflows: Schema.optional(Schema.Boolean).annotate({
+        description: "Also run saved workflows from Claude Code's .claude/workflows/ folders (default: false)",
+      }),
       // kilocode_change end
       primary_tools: Schema.optional(Schema.mutable(Schema.Array(Schema.String))).annotate({
         description: "Tools that should only be available to primary agents.",

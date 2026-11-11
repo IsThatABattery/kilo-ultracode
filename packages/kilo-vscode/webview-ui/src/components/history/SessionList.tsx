@@ -13,6 +13,7 @@ import { Button } from "@kilocode/kilo-ui/button"
 import { IconButton } from "@kilocode/kilo-ui/icon-button"
 import { useDialog } from "@kilocode/kilo-ui/context/dialog"
 import { useSession } from "../../context/session"
+import { isRootSession } from "../../context/session-utils"
 import { useLanguage } from "../../context/language"
 import { formatRelativeDate } from "../../utils/date"
 import type { SessionInfo } from "../../types/messages"
@@ -53,10 +54,11 @@ const SessionList: Component<SessionListProps> = (props) => {
   const [notice, setNotice] = createSignal("")
   let seq = 0
 
+  // The backend lists root sessions only. Tracked child sessions (subagents, workflow
+  // agents) also reach the store, and must not show up as history entries.
   const items = createMemo(() => {
     const ids = props.sessionIds?.()
-    if (!ids) return session.sessions()
-    return session.sessions().filter((item) => ids.has(item.id))
+    return session.sessions().filter((item) => isRootSession(item) && (!ids || ids.has(item.id)))
   })
 
   onMount(() => {

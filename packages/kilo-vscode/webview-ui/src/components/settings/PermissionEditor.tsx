@@ -120,6 +120,8 @@ const TRAILING_TOOLS: ToolDef[] = [
   { id: "websearch", descriptionKey: "settings.autoApprove.tool.websearch" },
   { id: "webfetch", descriptionKey: "settings.autoApprove.tool.webfetch" },
   { id: "browser_open", descriptionKey: "settings.autoApprove.tool.browser_open", preserveExceptions: true },
+  // The launch prompt saves per-workflow rules (Claude Code's `Workflow(<name>)`); the level keeps them.
+  { id: "workflow", descriptionKey: "settings.autoApprove.tool.workflow", preserveExceptions: true },
   { id: "doom_loop", descriptionKey: "settings.autoApprove.tool.doom_loop" },
 ]
 

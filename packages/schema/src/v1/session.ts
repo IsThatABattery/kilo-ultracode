@@ -62,15 +62,20 @@ export const ContentFilterError = namedError("ContentFilterError", {
   message: Schema.String,
 })
 
-export class OutputFormatText extends Schema.Class<OutputFormatText>("OutputFormatText")({
+// kilocode_change start - plain structs: messages read back from the database carry plain `format` objects, which a
+// Schema.Class rejects when the message list is encoded (GET /session/:id/message → 400 for json_schema prompts)
+export const OutputFormatText = Schema.Struct({
   type: Schema.Literal("text"),
-}) {}
+}).annotate({ identifier: "OutputFormatText" })
+export type OutputFormatText = Schema.Schema.Type<typeof OutputFormatText>
 
-export class OutputFormatJsonSchema extends Schema.Class<OutputFormatJsonSchema>("OutputFormatJsonSchema")({
+export const OutputFormatJsonSchema = Schema.Struct({
   type: Schema.Literal("json_schema"),
   schema: Schema.Record(Schema.String, Schema.Any).annotate({ identifier: "JSONSchema" }),
   retryCount: NonNegativeInt.pipe(Schema.optional, Schema.withDecodingDefault(Effect.succeed(2))),
-}) {}
+}).annotate({ identifier: "OutputFormatJsonSchema" })
+export type OutputFormatJsonSchema = Schema.Schema.Type<typeof OutputFormatJsonSchema>
+// kilocode_change end
 
 export const Format = Schema.Union([OutputFormatText, OutputFormatJsonSchema]).annotate({
   discriminator: "type",

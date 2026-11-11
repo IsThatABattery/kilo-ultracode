@@ -625,6 +625,49 @@
   font-weight: 500;
 }
 
+/* Ultracode switch under the effort options. It sits outside the listbox, so
+   toggling it never picks an option or closes the popover. */
+.thinking-selector-ultracode {
+  padding: 8px 12px;
+}
+
+.thinking-selector-ultracode[data-divided] {
+  margin-top: 4px;
+  border-top: 1px solid var(--border-weak-base, var(--vscode-widget-border));
+}
+
+.thinking-selector-ultracode [data-component="switch"] {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  column-gap: 12px;
+  align-items: center;
+}
+
+.thinking-selector-ultracode [data-slot="switch-label"] {
+  grid-column: 1;
+  font-size: var(--kilo-font-size-12);
+  font-weight: 500;
+}
+
+.thinking-selector-ultracode [data-slot="switch-description"] {
+  grid-column: 1;
+  font-size: var(--kilo-font-size-11);
+  color: var(--text-weak, var(--vscode-descriptionForeground));
+}
+
+.thinking-selector-ultracode [data-slot="switch-control"] {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+}
+
+/* "· Ultracode" on the effort trigger. It stays visible when the effort label
+   collapses, so the mode is never hidden. */
+.thinking-selector-trigger-suffix {
+  flex-shrink: 0;
+  white-space: nowrap;
+  color: var(--text-interactive-base, var(--vscode-textLink-foreground));
+}
+
 /* ============================================
    Mode Switcher (uses kilo-ui Popover)
    ============================================ */

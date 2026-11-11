@@ -820,6 +820,7 @@ export const RunCommand = effectCmd({
             if (drain.event(event)) break // kilocode_change
             if (event.type === "session.created" && event.properties.info.parentID) {
               if (sessions.has(event.properties.info.parentID)) sessions.add(event.properties.info.id)
+              KiloRunAuto.session(tracked, event.properties.info) // workflow agents answer like Task children
             }
             // kilocode_change end
 
@@ -1030,7 +1031,7 @@ export const RunCommand = effectCmd({
             // kilocode_change end
           }
           // kilocode_change start - idle must not clear an auto-rejected headless run
-          if (autoRejected) {
+          if (autoRejected || tracked.rejected) {
             const msg = "run ended with an auto-rejected permission; pass --auto for autonomous use"
             error = error ? error + EOL + msg : msg
             UI.error(msg)
@@ -1068,6 +1069,15 @@ export const RunCommand = effectCmd({
             sseMaxRetryAttempts: 1,
             onSseError: (error) => drain.end(error),
           })
+          // kilocode_change start - worktree workflow agents publish their asks under their own directory
+          const watched = KiloRunAuto.global(client, {
+            state: tracked,
+            directory: cwd,
+            approve: args.auto || skipPermissions,
+            signal: drain.signal,
+            warn: (text) => UI.println(UI.Style.TEXT_WARNING_BOLD + "!", UI.Style.TEXT_NORMAL + text),
+          })
+          // kilocode_change end
           const completed = loop(client, events).then(
             (error) => {
               drain.end()
@@ -1098,7 +1108,9 @@ export const RunCommand = effectCmd({
                       agent,
                       model: pick(args.model),
                       variant: args.variant,
-                      parts: [...files, { type: "text", text: message }],
+                      // kilocode_change start - a headless prompt is not human-typed: no ultracode keyword opt-in
+                      parts: [...files, { type: "text", text: message, metadata: { kilo: { origin: "headless" } } }],
+                      // kilocode_change end
                     }),
             )
             if (result.error) {
@@ -1124,6 +1136,7 @@ export const RunCommand = effectCmd({
           } finally {
             drain.close()
             await completed
+            await watched // kilocode_change
             await KiloRunDrain.flush()
           }
           return

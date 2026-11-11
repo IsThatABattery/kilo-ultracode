@@ -85,6 +85,7 @@ describe("ruleset", () => {
     expect(effectiveRuleLevel(rules, "external_directory")).toBe("ask")
     expect(effectiveRuleLevel(rules, "bash")).toBe("ask")
     expect(effectiveRuleLevel(rules, "doom_loop")).toBe("ask")
+    expect(effectiveRuleLevel(rules, "workflow")).toBe("ask")
   })
 
   it("applies top-level wildcards and direct rules in config order", () => {

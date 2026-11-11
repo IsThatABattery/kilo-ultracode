@@ -1,5 +1,11 @@
 import { describe, it, expect } from "bun:test"
-import { displaySkillCommand, savedRuleStates } from "../../webview-ui/src/components/chat/permission-dock-utils"
+import {
+  describePatterns,
+  displaySkillCommand,
+  savableRules,
+  savedRuleStates,
+  workflowPhases,
+} from "../../webview-ui/src/components/chat/permission-dock-utils"
 
 describe("displaySkillCommand", () => {
   it("leaves ordinary commands, including astral characters, untouched", () => {
@@ -80,5 +86,52 @@ describe("savedRuleStates", () => {
   it("returns empty map for empty config object", () => {
     const result = savedRuleStates(["npm *"], {})
     expect(result).toEqual({})
+  })
+})
+
+describe("workflowPhases", () => {
+  it("lists a workflow launch's planned phases with their details", () => {
+    const args = { name: "review", phases: [{ title: "Find", detail: "one agent per file" }, { title: "Verify" }] }
+    expect(workflowPhases(args)).toEqual([
+      { title: "Find", detail: "one agent per file" },
+      { title: "Verify", detail: undefined },
+    ])
+  })
+
+  it("drops malformed entries from the script's metadata", () => {
+    const args = { phases: [null, "Find", { title: "" }, { title: 3 }, { title: "Fix", detail: 7 }] }
+    expect(workflowPhases(args)).toEqual([{ title: "Fix", detail: undefined }])
+    expect(workflowPhases({ phases: "Find" })).toEqual([])
+    expect(workflowPhases({})).toEqual([])
+  })
+
+  it("labels the launch with the workflow's name", () => {
+    const t = (key: string) => (key === "ui.permission.toolLabel.workflow" ? "Workflow" : key)
+    expect(describePatterns("workflow", ["review"], t)).toEqual({ kind: "single", text: "Workflow review" })
+  })
+})
+
+describe("savableRules", () => {
+  it("offers a tool's always rules, or the finer metadata rules when it sends them", () => {
+    expect(savableRules({ always: ["*"], args: {} })).toEqual(["*"])
+    const browser = { always: ["navigate:https://a.dev"], args: { rules: ["navigate:https://a.dev", "navigate:*"] } }
+    expect(savableRules(browser)).toEqual(["navigate:https://a.dev", "navigate:*"])
+  })
+
+  it("offers nothing for a workflow script the model wrote", () => {
+    // The backend asks about "script:<name>" with no always rule and disables "always" for an inline or file script.
+    expect(savableRules({ always: [], args: { name: "review", disableAlways: true } })).toEqual([])
+    expect(savableRules({ always: [], args: { name: "review" } })).toEqual([])
+  })
+
+  it("offers a saved workflow run by name its project-scoped rule", () => {
+    const saved = { always: ["review@/repo"], args: { name: "review" } }
+    expect(savableRules(saved)).toEqual(["review@/repo"])
+  })
+
+  it("offers nothing when the ask disables always, even with rules to show", () => {
+    // A protected config edit keeps its always list but must stay a one-time approval.
+    expect(savableRules({ always: ["*"], args: { disableAlways: true, configProtected: true } })).toEqual([])
+    expect(savableRules({ always: ["a"], args: { disableAlways: true, rules: ["a"] } })).toEqual([])
   })
 })

@@ -169,9 +169,14 @@ export namespace KiloSessionPrompt {
       stop: (sessionID: SessionID, work: Effect.Effect<void>) => Effect.Effect<void>
       scope?: "session" | "tree"
     }) {
+      // Dynamic workflow agents run detached from the turn that launched them (Claude Code keeps
+      // workflows running when the user interrupts the main loop), so a tree cancel leaves their
+      // sessions and subtrees alone. They stop through the workflow run, or when cancelled directly.
       function descendants(sessionID: SessionID): Effect.Effect<SessionID[]> {
         return Effect.gen(function* () {
-          const children = yield* input.sessions.children(sessionID)
+          const children = (yield* input.sessions.children(sessionID)).filter(
+            (child) => child.metadata?.["kilo.workflow"] == null,
+          )
           const nested = yield* Effect.forEach(children, (child) => descendants(child.id), { concurrency: "unbounded" })
           return [...children.map((child) => child.id), ...nested.flat()]
         })

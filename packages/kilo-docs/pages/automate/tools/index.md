@@ -21,7 +21,7 @@ Tools are organized into logical groups based on their functionality:
 | **Web Group** | Fetch and search web content | `webfetch`, `websearch` | Research, documentation lookup |
 | **Browser Preview** | Agent Manager's built-in browser preview | `browser_open` | Previewing and checking locally running apps |
 | **MCP Group** | External tool integration | MCP server tools (namespaced as `{server}_{tool}`) | Specialized functionality via MCP |
-| **Workflow Group** | Sub-agents and task management | `question`, `task`, `todowrite`, `todoread`, `plan`, `skill`, `agent_manager`, `board_post`, `board_read` | Context switching and task organization |
+| **Workflow Group** | Sub-agents and task management | `question`, `task`, `workflow`, `todowrite`, `todoread`, `plan`, `skill`, `agent_manager`, `board_post`, `board_read` | Context switching and task organization |
 
 ### Always Available Tools
 
@@ -112,6 +112,7 @@ These tools help manage the conversation and task flow:
 
 - `question` - Asks you a clarifying question with selectable options
 - `task` - Spawns a sub-agent (child session)
+- `workflow` - Runs a [dynamic workflow](/docs/code-with-ai/features/workflows) script that orchestrates many sub-agents in the background
 - `todowrite` - Creates and updates a session TODO list
 - `todoread` - Reads the current session TODO list
 - `plan` - Enters structured planning mode

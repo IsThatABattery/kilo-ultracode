@@ -66,6 +66,8 @@ System prompt for this agent.
 
 Markdown files in `.kilo/workflows/` or `.kilocode/workflows/` (project-level) and `~/.kilo/workflows/` or `~/.kilocode/workflows/` (global). These are automatically converted to commands at startup. The filename (minus `.md`) becomes the command name. Project workflows override global ones with the same name.
 
+Saved dynamic workflows are `.js` Workflow tool scripts (starting with `export const meta = { name, description }`) in the same `workflows/` directories, including `~/.config/kilo/workflows/`, and, with `experimental.claude_workflows: true`, in Claude Code's `.claude/workflows/` and `~/.claude/workflows/`. Each becomes a `/<meta.name>` command that runs it through the workflow tool, and the tool also runs it by `name`. The nearest project directory wins, and project beats global. Settings: `experimental.workflows: false` (or `KILO_DISABLE_WORKFLOWS=1`) turns dynamic workflows off, `experimental.ultracode: true` makes ultracode the default, `experimental.ultracode_keyword: false` stops the word `ultracode` in a message from opting in, and `experimental.workflow_size` (`small`, `medium`, `large`, `unrestricted`) sets the size guideline.
+
 ## Agent Manager Setup And Run Scripts
 
 For the full product guidance, use the canonical [Agent Manager reference](https://kilo.ai/docs/automate/agent-manager) and [Agent Manager Workflows guide](https://kilo.ai/docs/automate/agent-manager-workflows). Prefer these links instead of guessing documentation paths.
