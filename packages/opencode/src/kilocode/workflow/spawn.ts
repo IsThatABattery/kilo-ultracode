@@ -329,7 +329,8 @@ export namespace WorkflowSpawn {
               },
             })
             held.child = child.id
-            KiloSession.register({ id: child.id, parentID, platform })
+            // Sibling agents send the same system prompt and tools, so they share the launching session's cache key.
+            KiloSession.register({ id: child.id, parentID, platform, cache: KiloSession.cache(parentID) })
             yield* drain.link(child.id, parentID)
             yield* SandboxPolicy.inherit(
               parentID,
