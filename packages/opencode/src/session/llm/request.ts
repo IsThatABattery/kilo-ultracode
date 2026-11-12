@@ -103,7 +103,7 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
     ? ProviderTransform.smallOptions(input.model)
     : ProviderTransform.options({
         model: input.model,
-        sessionID: KiloSession.cache(input.sessionID), // kilocode_change - workflow agents share a prompt cache key
+        sessionID: input.sessionID,
         providerOptions: input.provider.options,
       })
   // kilocode_change start - drop Kilo-internal agent metadata (id/displayName/source)

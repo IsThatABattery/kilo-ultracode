@@ -15,7 +15,6 @@ import { Config } from "../../../src/config/config"
 import { RuntimeFlags } from "../../../src/effect/runtime-flags"
 import { Git } from "../../../src/git"
 import { KiloSessions } from "../../../src/kilo-sessions/kilo-sessions"
-import { KiloSession } from "../../../src/kilocode/session"
 import { SessionDrain } from "../../../src/kilocode/session/drain"
 import { WorkflowPrompts } from "../../../src/kilocode/workflow/prompts"
 import { WorkflowSpawn } from "../../../src/kilocode/workflow/spawn"
@@ -185,8 +184,6 @@ describe("WorkflowSpawn", () => {
 
             const child = yield* ctx.sessions.get(SessionID.make(outcome.sessionID))
             expect(child.parentID).toBe(ctx.parent.id)
-            // Agents share the launching session's prompt cache key, so their identical prefixes hit one cache.
-            expect(KiloSession.cache(child.id)).toBe(KiloSession.cache(ctx.parent.id))
             expect(child.title).toBe("counter (@workflow-subagent subagent)")
             expect(child.agent).toBe("workflow-subagent")
             expect(child.metadata?.[WorkflowSpawn.METADATA]).toEqual({

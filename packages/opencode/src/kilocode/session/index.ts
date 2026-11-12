@@ -70,25 +70,14 @@ export namespace KiloSession {
   const overrides = new Map<string, string>()
   const parents = new Map<string, string>()
   const roots = new Map<string, string>()
-  const caches = new Map<string, string>()
 
-  /** `cache` shares another session's prompt cache key, so sessions sending the same prompt prefix reuse one cache. */
-  export function register(input: { id: string; parentID?: string; platform?: string; cache?: string }) {
+  export function register(input: { id: string; parentID?: string; platform?: string }) {
     const root = input.parentID ? (roots.get(input.parentID) ?? input.parentID) : input.id
     const platform = input.platform ?? (input.parentID ? resolvePlatform(input.parentID) : undefined)
 
     roots.set(input.id, root)
     if (input.parentID) parents.set(input.id, input.parentID)
     if (platform) overrides.set(input.id, platform)
-    if (input.cache) caches.set(input.id, input.cache)
-  }
-
-  /**
-   * Prompt cache key for a session's requests: its own ID unless it shares another session's. Providers that route
-   * by cache key (OpenAI, Azure, xAI, Mistral, ...) only reuse a cached prefix across requests with the same key.
-   */
-  export function cache(id: string): string {
-    return caches.get(id) ?? id
   }
 
   export function setPlatformOverride(id: string, platform: string) {
