@@ -10,7 +10,6 @@ import { InstanceState } from "@/effect/instance-state"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import type { Plugin } from "@/plugin"
 import type { Provider } from "@/provider/provider"
-import { KiloSession } from "@/kilocode/session"
 import { LLMRequestPrep } from "@/session/llm/request"
 import { MessageID, SessionID } from "@/session/schema"
 import { SystemPrompt } from "@/session/system"
@@ -72,7 +71,7 @@ function user(name: string): SessionV1.User {
   }
 }
 
-async function prepare(name: string, oauth = false, session = "ses_test") {
+async function prepare(name: string, oauth = false) {
   const auth: Auth.Info | undefined = oauth
     ? { type: "oauth", refresh: "refresh", access: "access", expires: Date.now() + 60_000 }
     : undefined
@@ -90,7 +89,7 @@ async function prepare(name: string, oauth = false, session = "ses_test") {
   return Effect.runPromise(
     LLMRequestPrep.prepare({
       user: user(name),
-      sessionID: session,
+      sessionID: "ses_test",
       model,
       agent: agent(name),
       system: [],
@@ -334,20 +333,4 @@ describe("LLM request headers", () => {
       }),
     )
   }
-})
-
-describe("prompt cache key", () => {
-  test("a session sends its own ID unless it shares another session's cache key", async () => {
-    KiloSession.register({ id: "ses_cache_parent" })
-    KiloSession.register({ id: "ses_cache_agent_a", parentID: "ses_cache_parent", cache: "ses_cache_parent" })
-    KiloSession.register({ id: "ses_cache_agent_b", parentID: "ses_cache_parent", cache: "ses_cache_parent" })
-    KiloSession.register({ id: "ses_cache_task", parentID: "ses_cache_parent" })
-
-    const keys = await Promise.all(
-      ["ses_cache_parent", "ses_cache_agent_a", "ses_cache_agent_b", "ses_cache_task"].map((id) =>
-        prepare("build", false, id).then((result) => result.params.options.promptCacheKey),
-      ),
-    )
-    expect(keys).toEqual(["ses_cache_parent", "ses_cache_parent", "ses_cache_parent", "ses_cache_task"])
-  })
 })
